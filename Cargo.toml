@@ -1,0 +1,9 @@
+[package]
+name = "cchashmap"
+version = "0.1.0"
+authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>"]
+
+[dependencies]
+byteorder = "*"
+quickcheck = "*"
+traverse = { path = "../rust-traverse" }
