@@ -8,7 +8,6 @@ use std::slice;
 
 use quickcheck::{self, Arbitrary};
 
-//#[derive(Debug)]
 #[derive(Clone)]
 pub struct Array<V> {
     buf: Vec<u8>,
@@ -272,46 +271,6 @@ impl<V> Array<V> {
             }
         }
     }
-
-    /*
-    pub fn into_iter<'a>(&'a mut self) -> IntoIter<'a, V> {
-        unsafe {
-            IntoIter {
-                iter: self.iter_raw(),
-            }
-        }
-    }
-
-    unsafe fn read_key_at(&self, mut index: usize) -> (&[u8], usize) {
-        let ptr = self.buf.as_ptr();
-
-        let len: usize = ptr::read(ptr.offset(index as isize) as *const usize);
-        index += mem::size_of::<usize>();
-
-        let key = slice::from_raw_parts(ptr.offset(index as isize), len);
-
-        (key, index + len)
-    }
-
-    unsafe fn read_value_at(&self, mut index: usize) -> (*const V, usize) {
-        let ptr = self.buf.as_ptr();
-
-        let value = ptr.offset(index as isize) as *const V;
-        index += mem::size_of::<V>();
-
-        (value, index)
-    }
-
-    unsafe fn read_value(&mut self, index: usize) -> (&V, usize) {
-        let (value_ptr, next) = self.read_value_at(index);
-        (mem::transmute(value_ptr), next)
-    }
-
-    unsafe fn read_value_mut(&mut self, index: usize) -> (&mut V, usize) {
-        let (value_ptr, next) = self.read_value_at(index);
-        (mem::transmute(value_ptr), next)
-    }
-    */
 
     unsafe fn iter_raw<'a>(&'a self) -> IterRaw<'a, V> {
         self.iter_raw_len(self.buf.len(), self.len)
