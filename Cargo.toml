@@ -3,7 +3,10 @@ name = "cchashmap"
 version = "0.1.0"
 authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>"]
 
+[features]
+unstable = ["compiletest_rs"]
+
 [dependencies]
 byteorder = "*"
 quickcheck = "*"
-traverse = { path = "../rust-traverse" }
+compiletest_rs = { version = "*", optional = true }
