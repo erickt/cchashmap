@@ -20,4 +20,10 @@ fn main() {
         array.insert(b"123", 4);
         array.drain().next().unwrap() //~ Error `array` does not live long enough
     };
+
+    let value = {
+        let mut array = Array::new();
+        array.insert(b"123", 4);
+        array.get(b"123") //~ Error `array` does not live long enough
+    };
 }

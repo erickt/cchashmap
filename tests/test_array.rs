@@ -123,3 +123,74 @@ fn quickcheck_array_drain() {
 
     quickcheck::quickcheck(prop as fn(BTreeMap<Vec<u8>, u32>) -> bool);
 }
+
+#[test]
+fn test_drop_works() {
+    struct DropCounter<'a> {
+        count: &'a mut u32
+    }
+
+    impl<'a> Drop for DropCounter<'a> {
+        fn drop(&mut self) {
+            *self.count += 1;
+        }
+    }
+
+    let (mut count_x, mut count_y) = (0, 0);
+    {
+        let mut array = Array::new();
+        array.insert(b"a", DropCounter { count: &mut count_x });
+        array.insert(b"b", DropCounter { count: &mut count_y });
+        drop(array);
+    };
+    assert_eq!(count_x, 1);
+    assert_eq!(count_y, 1);
+}
+
+#[test]
+fn test_drain_drops() {
+    static mut drops: u32 = 0;
+    struct Elem(i32);
+    impl Drop for Elem {
+        fn drop(&mut self) {
+            unsafe { drops += 1; }
+        }
+    }
+
+    let mut array = Array::new();
+    array.insert(b"a", Elem(1));
+    array.insert(b"b", Elem(2));
+    array.insert(b"c", Elem(3));
+
+    assert_eq!(unsafe { drops }, 0);
+
+    array.drain();
+
+    assert_eq!(unsafe { drops }, 3);
+
+    array.drain();
+
+    assert_eq!(unsafe { drops }, 3);
+}
+
+#[test]
+#[should_panic]
+fn test_drain_fail() {
+    struct BadElem(i32);
+    impl Drop for BadElem {
+        fn drop(&mut self) {
+            let BadElem(ref mut x) = *self;
+            if *x == 0xbadbeef {
+                panic!("BadElem panic: 0xbadbeef")
+            }
+        }
+    }
+
+    let mut array = Array::new();
+    array.insert(b"a", BadElem(1));
+    array.insert(b"b", BadElem(2));
+    array.insert(b"c", BadElem(0xbadbeef));
+    array.insert(b"d", BadElem(3));
+
+    array.drain();
+}
