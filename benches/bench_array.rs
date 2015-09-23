@@ -1,3 +1,4 @@
+#![cfg(array)]
 #![feature(test)]
 
 extern crate test;

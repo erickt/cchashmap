@@ -12,7 +12,7 @@ static DEFAULT_CAPACITY: usize = 4096;
 
 #[derive(Clone)]
 pub struct CCHashMap<V> {
-    buckets: Vec<ArrayMap<V>>,
+    pub buckets: Vec<ArrayMap<V>>,
     len: usize,
 }
 
@@ -103,11 +103,58 @@ impl<V> CCHashMap<V> {
         inserted
     }
 
-    pub fn contains_key<T>(&self, key: T) -> bool
-        where T: Borrow<[u8]>
+    pub fn contains_key<K>(&self, key: K) -> bool
+        where K: Borrow<[u8]>
     {
         let key = key.borrow();
         self.get_bucket(key).contains_key(key)
+    }
+
+    /// Returns a reference to the value corresponding to the key.
+    ///
+    /// The key may be any borrowed form of the map's key type, but
+    /// `Hash` and `Eq` on the borrowed form *must* match those for
+    /// the key type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    ///
+    /// let mut map = HashMap::new();
+    /// map.insert(1, "a");
+    /// assert_eq!(map.get(&1), Some(&"a"));
+    /// assert_eq!(map.get(&2), None);
+    /// ```
+    pub fn get<K>(&self, key: K) -> Option<&V>
+        where K: Borrow<[u8]>
+    {
+        let key = key.borrow();
+        self.get_bucket(key).get(key)
+    }
+
+    /// Returns a mutable reference to the value corresponding to the key.
+    ///
+    /// The key may be any borrowed form of the map's key type, but the ordering
+    /// on the borrowed form *must* match the ordering on the key type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    ///
+    /// let mut map = BTreeMap::new();
+    /// map.insert(1, "a");
+    /// if let Some(x) = map.get_mut(&1) {
+    ///     *x = "b";
+    /// }
+    /// assert_eq!(map[&1], "b");
+    /// ```
+    pub fn get_mut<K>(&mut self, key: K) -> Option<&mut V>
+        where K: Borrow<[u8]>
+    {
+        let key = key.borrow();
+        self.get_bucket_mut(key).get_mut(key)
     }
 
     pub fn iter<'a>(&'a self) -> Iter<'a, V> {
@@ -158,6 +205,33 @@ impl<V> CCHashMap<V> {
         let second: fn((&'a [u8], &'a V)) -> &'a V = second; // coerce to fn pointer
 
         Values { inner: self.iter().map(second) }
+    }
+
+    /// Gets the given key's corresponding entry in the map for in-place manipulation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    ///
+    /// let mut letters = HashMap::new();
+    ///
+    /// for ch in "a short treatise on fungi".chars() {
+    ///     let counter = letters.entry(ch).or_insert(0);
+    ///     *counter += 1;
+    /// }
+    ///
+    /// assert_eq!(letters[&'s'], 2);
+    /// assert_eq!(letters[&'t'], 3);
+    /// assert_eq!(letters[&'u'], 1);
+    /// assert_eq!(letters.get(&'y'), None);
+    /// ```
+    pub fn entry<'a, 'b>(&'a mut self, key: &'b [u8]) -> Entry<'a, 'b, V> {
+        let bucket = self.get_bucket_mut(key);
+        match bucket.entry(key) {
+            array::Entry::Vacant(entry) => Entry::Vacant(VacantEntry(entry)),
+            array::Entry::Occupied(entry) => Entry::Occupied(OccupiedEntry(entry)),
+        }
     }
 
     fn get_bucket_index(&self, key: &[u8]) -> usize {
@@ -248,6 +322,77 @@ impl<K, V> FromIterator<(K, V)> for CCHashMap<V>
             map.insert(key, value);
         }
         map
+    }
+}
+
+/// A view into a single entry in a map, which may either be vacant or occupied.
+pub enum Entry<'a, 'b, V: 'a> {
+    /// A vacant Entry
+    Vacant(VacantEntry<'a, 'b, V>),
+
+    /// An occupied Entry
+    Occupied(OccupiedEntry<'a, V>),
+}
+
+/// A vacant Entry.
+pub struct VacantEntry<'a, 'b, V: 'a>(array::VacantEntry<'a, 'b, V>);
+
+/// An occupied Entry.
+pub struct OccupiedEntry<'a, V: 'a>(array::OccupiedEntry<'a, V>);
+
+impl<'a, 'b, V> Entry<'a, 'b, V> {
+    /// Ensures a value is in the entry by inserting the default if empty, and returns
+    /// a mutable reference to the value in the entry.
+    pub fn or_insert(self, default: V) -> &'a mut V {
+        match self {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(default),
+        }
+    }
+
+    /// Ensures a value is in the entry by inserting the result of the default function if empty,
+    /// and returns a mutable reference to the value in the entry.
+    pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'a mut V {
+        match self {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(default()),
+        }
+    }
+}
+
+impl<'a, V> OccupiedEntry<'a, V> {
+    /// Gets a reference to the value in the entry.
+    pub fn get(&self) -> &V {
+        self.0.get()
+    }
+
+    /// Gets a mutable reference to the value in the entry.
+    pub fn get_mut(&mut self) -> &mut V {
+        self.0.get_mut()
+    }
+
+    /// Converts the OccupiedEntry into a mutable reference to the value in the entry
+    /// with a lifetime bound to the map itself
+    pub fn into_mut(self) -> &'a mut V {
+        self.0.into_mut()
+    }
+
+    /// Sets the value of the entry, and returns the entry's old value
+    pub fn insert(&mut self, value: V) -> V {
+        self.0.insert(value)
+    }
+
+    /// Takes the value out of the entry, and returns it
+    pub fn remove(self) -> V {
+        self.0.remove()
+    }
+}
+
+impl<'a, 'b, V: 'a> VacantEntry<'a, 'b, V> {
+    /// Sets the value of the entry with the VacantEntry's key,
+    /// and returns a mutable reference to it
+    pub fn insert(self, value: V) -> &'a mut V {
+        self.0.insert(value)
     }
 }
 

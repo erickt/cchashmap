@@ -1,3 +1,4 @@
+#![cfg(set)]
 #![feature(test)]
 
 extern crate test;
@@ -9,9 +10,8 @@ use std::iter::FromIterator;
 use byteorder::{ByteOrder, NativeEndian};
 use cchashmap::CCHashSet;
 
-static OUTER_LEN: usize = 1000000;
+static OUTER_LEN: usize = 100;
 static INNER_LEN: usize = 5;
-
 
 fn make_fixture() -> Vec<Vec<u8>> {
     let mut haystack = Vec::with_capacity(OUTER_LEN);

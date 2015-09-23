@@ -95,7 +95,10 @@ impl<V> ArrayMap<V> {
     /// assert_eq!(map.get(&1), Some(&"a"));
     /// assert_eq!(map.get(&2), None);
     /// ```
-    pub fn get(&self, key: &[u8]) -> Option<&V> {
+    pub fn get<K>(&self, key: K) -> Option<&V>
+        where K: Borrow<[u8]>
+    {
+        let key = key.borrow();
         self.iter().find(|&(k, _)| key == k).map(|(_, v)| v)
     }
 
@@ -115,8 +118,10 @@ impl<V> ArrayMap<V> {
     /// assert_eq!(map.contains_key(&1), true);
     /// assert_eq!(map.contains_key(&2), false);
     /// ```
-    pub fn contains_key(&self, key: &[u8]) -> bool {
-        self.get(key).is_some()
+    pub fn contains_key<K>(&self, key: K) -> bool
+        where K: Borrow<[u8]>
+    {
+        self.get(key.borrow()).is_some()
     }
 
     /// Returns a mutable reference to the value corresponding to the key.
@@ -137,7 +142,10 @@ impl<V> ArrayMap<V> {
     /// }
     /// assert_eq!(map[&1], "b");
     /// ```
-    pub fn get_mut(&mut self, key: &[u8]) -> Option<&mut V> {
+    pub fn get_mut<K>(&mut self, key: K) -> Option<&mut V>
+        where K: Borrow<[u8]>
+    {
+        let key = key.borrow();
         self.iter_mut().find(|&(k, _)| key == k).map(|(_, v)| v)
     }
 
@@ -338,7 +346,7 @@ impl<V> ArrayMap<V> {
             let key_len = key.len();
             let value_len = mem::size_of::<V>();
             let len = buf_len + len_len + key_len + value_len;
-            self.buf.reserve(len);
+            self.buf.reserve_exact(len);
 
             // Grab a pointer that's pointing to the end of the space.
             let mut end = self.buf.as_mut_ptr().offset(buf_len as isize);
