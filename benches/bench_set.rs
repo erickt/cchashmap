@@ -1,4 +1,3 @@
-/*
 #![feature(test)]
 
 extern crate test;
@@ -109,5 +108,4 @@ fn bench_contains_bucket(b: &mut test::Bencher) {
         }
     })
 }
-*/
 */
