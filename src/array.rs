@@ -28,12 +28,55 @@ impl<V> Array<V> {
         }
     }
 
+    /// Returns the number of elements in the set.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeSet;
+    ///
+    /// let mut v = BTreeSet::new();
+    /// assert_eq!(v.len(), 0);
+    /// v.insert(1);
+    /// assert_eq!(v.len(), 1);
+    /// ```
     pub fn len(&self) -> usize {
         self.len
     }
 
+    /// Returns true if the set contains no elements.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeSet;
+    ///
+    /// let mut v = BTreeSet::new();
+    /// assert!(v.is_empty());
+    /// v.insert(1);
+    /// assert!(!v.is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.len == 0
+    }
+
+    /// Clears the set, removing all values.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeSet;
+    ///
+    /// let mut v = BTreeSet::new();
+    /// v.insert(1);
+    /// v.clear();
+    /// assert!(v.is_empty());
+    /// ```
+    pub fn clear(&mut self) {
+        // FIXME: Replace with `std::intrinsics::drop_in_place` once stabilized.
+        // For now, just let drain take care of dropping all our items.
+        for _ in self.drain() {}
+        self.buf.clear();
     }
 
     /// Returns a reference to the value corresponding to the key.
