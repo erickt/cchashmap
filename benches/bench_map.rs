@@ -1,3 +1,4 @@
+#![cfg(feature = "map")]
 #![feature(test)]
 
 extern crate test;

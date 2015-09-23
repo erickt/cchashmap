@@ -1,4 +1,4 @@
-#![cfg(array)]
+//#![cfg(array)]
 #![feature(test)]
 
 extern crate test;
@@ -80,8 +80,11 @@ macro_rules! bench_iter {
             let haystack = $ctor;
 
             b.iter(|| {
-                for key in haystack.iter() {
-                    test::black_box(key);
+                for (key, value) in haystack.iter() {
+                    for byte in key.iter() {
+                        test::black_box(byte);
+                    }
+                    test::black_box(value);
                 }
             })
         }
