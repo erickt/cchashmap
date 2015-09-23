@@ -1,10 +1,6 @@
 use std::borrow::Borrow;
 use std::fmt;
-use std::hash::{Hash, Hasher, SipHasher};
 use std::iter::FromIterator;
-use std::slice;
-
-use bucket::{self, Bucket};
 
 use map::{self, CCHashMap};
 

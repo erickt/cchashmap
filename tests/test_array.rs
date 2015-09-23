@@ -7,12 +7,12 @@ extern crate test;
 use std::collections::BTreeMap;
 use std::iter::FromIterator;
 
-use cchashmap::Array;
+use cchashmap::array::ArrayMap;
 
 #[test]
 fn quickcheck_array_from_iter_and_iter() {
     fn prop(map: BTreeMap<Vec<u8>, u32>) -> bool {
-        let array = Array::from_iter(map.iter().map(|(k, v)| (&**k, *v)));
+        let array = ArrayMap::from_iter(map.iter().map(|(k, v)| (&**k, *v)));
 
         if map.len() != array.len() {
             return false;
@@ -45,7 +45,7 @@ fn quickcheck_array_from_iter_and_iter() {
 #[test]
 fn quickcheck_array_insert_and_get() {
     fn prop(map: BTreeMap<Vec<u8>, u32>) -> bool {
-        let mut array = Array::new();
+        let mut array = ArrayMap::new();
 
         for (key, value) in map.iter() {
             array.insert(key, *value);
@@ -71,7 +71,7 @@ fn quickcheck_array_insert_and_get() {
 
 #[test]
 fn test_drain_empty() {
-    let mut array = Array::<u32>::new();
+    let mut array = ArrayMap::<u32>::new();
 
     assert_eq!(array.len(), 0);
     assert!(array.is_empty());
@@ -87,7 +87,7 @@ fn test_drain_empty() {
 
 #[test]
 fn test_drain_one() {
-    let mut array = Array::<u32>::new();
+    let mut array = ArrayMap::<u32>::new();
     array.insert(&[], 0);
 
     assert_eq!(array.len(), 1);
@@ -106,7 +106,7 @@ fn test_drain_one() {
 #[test]
 fn quickcheck_array_drain() {
     fn prop(map: BTreeMap<Vec<u8>, u32>) -> bool {
-        let mut array = Array::from_iter(map.iter().map(|(k, v)| (&**k, *v)));
+        let mut array = ArrayMap::from_iter(map.iter().map(|(k, v)| (&**k, *v)));
 
         if map.len() != array.len() || map.is_empty() != array.is_empty() {
             return false;
@@ -138,7 +138,7 @@ fn test_drop_works() {
 
     let (mut count_x, mut count_y) = (0, 0);
     {
-        let mut array = Array::new();
+        let mut array = ArrayMap::new();
         array.insert(b"a", DropCounter { count: &mut count_x });
         array.insert(b"b", DropCounter { count: &mut count_y });
         drop(array);
@@ -157,7 +157,7 @@ fn test_drain_drops() {
         }
     }
 
-    let mut array = Array::new();
+    let mut array = ArrayMap::new();
     array.insert(b"a", Elem(1));
     array.insert(b"b", Elem(2));
     array.insert(b"c", Elem(3));
@@ -186,7 +186,7 @@ fn test_drain_fail() {
         }
     }
 
-    let mut array = Array::new();
+    let mut array = ArrayMap::new();
     array.insert(b"a", BadElem(1));
     array.insert(b"b", BadElem(2));
     array.insert(b"c", BadElem(0xbadbeef));

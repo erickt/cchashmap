@@ -9,19 +9,19 @@ use std::slice;
 use quickcheck::{self, Arbitrary};
 
 #[derive(Clone)]
-pub struct Array<V> {
+pub struct ArrayMap<V> {
     buf: Vec<u8>,
     len: usize,
     _marker: PhantomData<V>,
 }
 
-impl<V> Array<V> {
+impl<V> ArrayMap<V> {
     pub fn new() -> Self {
-        Array::with_capacity(0)
+        ArrayMap::with_capacity(0)
     }
 
     pub fn with_capacity(cap: usize) -> Self {
-        Array {
+        ArrayMap {
             buf: Vec::with_capacity(cap),
             len: 0,
             _marker: PhantomData,
@@ -328,7 +328,7 @@ impl<V> Array<V> {
         }
     }
 
-    fn push(&mut self, key: &[u8], value: V) -> &mut V {
+    pub fn push(&mut self, key: &[u8], value: V) -> &mut V {
         unsafe {
             let buf_len = self.buf.len();
 
@@ -376,7 +376,7 @@ impl<V> Array<V> {
     }
 }
 
-impl<T> Drop for Array<T> {
+impl<T> Drop for ArrayMap<T> {
     fn drop(&mut self) {
         // FIXME: Replace with `std::intrinsics::drop_in_place` once stabilized.
         // For now, just let drain take care of dropping all our items.
@@ -384,13 +384,13 @@ impl<T> Drop for Array<T> {
     }
 }
 
-impl<K, V> FromIterator<(K, V)> for Array<V>
+impl<K, V> FromIterator<(K, V)> for ArrayMap<V>
     where K: Borrow<[u8]>,
 {
     fn from_iter<I: IntoIterator<Item=(K, V)>>(iterator: I) -> Self {
         let iterator = iterator.into_iter();
 
-        let mut bucket = Array::with_capacity(iterator.size_hint().0);
+        let mut bucket = ArrayMap::with_capacity(iterator.size_hint().0);
 
         for (key, value) in iterator.into_iter() {
             bucket.insert(key.borrow(), value);
@@ -400,7 +400,7 @@ impl<K, V> FromIterator<(K, V)> for Array<V>
     }
 }
 
-impl<V> fmt::Debug for Array<V> where V: fmt::Debug {
+impl<V> fmt::Debug for ArrayMap<V> where V: fmt::Debug {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_set().entries(self.iter()).finish()
     }
@@ -452,7 +452,7 @@ impl<'a, V> RawItem<'a, V> {
 
 
 struct IterRaw<'a, V: 'a> {
-    array: &'a Array<V>,
+    array: &'a ArrayMap<V>,
     index: usize,
     end: usize,
     len: usize,
@@ -538,13 +538,13 @@ pub enum Entry<'a, 'b, V: 'a> {
 
 /// A vacant Entry.
 pub struct VacantEntry<'a, 'b, V: 'a> {
-    array: &'a mut Array<V>,
+    array: &'a mut ArrayMap<V>,
     key: &'b [u8],
 }
 
 /// An occupied Entry.
 pub struct OccupiedEntry<'a, V: 'a> {
-    array: &'a mut Array<V>,
+    array: &'a mut ArrayMap<V>,
     value_index: usize,
     next_index: usize,
 }
@@ -615,71 +615,16 @@ impl<'a, 'b, V: 'a> VacantEntry<'a, 'b, V> {
     }
 }
 
-impl<V> Arbitrary for Array<V> where V: Arbitrary {
-    fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> Array<V> {
-        let keys: Vec<(Vec<u8>, V)> = Arbitrary::arbitrary(g);
-        Array::from_iter(keys.into_iter())
+impl<V> Arbitrary for ArrayMap<V> where V: Arbitrary {
+    fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> ArrayMap<V> {
+        use std::collections::HashMap;
+        let keys: HashMap<Vec<u8>, V> = Arbitrary::arbitrary(g);
+        ArrayMap::from_iter(keys.into_iter())
     }
 
-    /*
-    fn shrink(&self) -> Box<Iterator<Item=Array>> {
-        let keys: Vec<Vec<u8>> = self.iter().map(|key| key.to_owned()).collect();
-        Box::new(keys.shrink().map(|keys| keys.iter().map(|key| &**key).collect::<Array>()))
+    fn shrink(&self) -> Box<Iterator<Item=ArrayMap<V>>> {
+        use std::collections::HashMap;
+        let keys: HashMap<Vec<u8>, V> = self.iter().map(|(k, v)| (k.to_owned(), v.clone())).collect();
+        Box::new(keys.shrink().map(|keys| ArrayMap::from_iter(keys.into_iter())))
     }
-    */
-}
-
-#[test]
-fn test_array() {
-    let mut array = Array::new();
-    array.insert(b"abc", 1);
-    array.insert(b"b", 2);
-    array.insert(b"c", 3);
-    println!("{:?}", array);
-
-    for (_, value) in array.iter_mut() {
-        *value = *value + 1;
-    }
-
-    println!("{:?}", array);
-
-    let x = array.remove(b"abc");
-    println!("remove: {:?} {:?}", array, x);
-
-    println!("entry insert1: {:?}", array.entry(b"abc").or_insert(0));
-    println!("{:?}", array);
-
-    println!("entry insert2: {:?}", array.entry(b"abcd").or_insert(0));
-    println!("{:?}", array);
-
-    println!("entry insert3: {:?}", array.entry(b"abcd").or_insert(1));
-    println!("{:?}", array);
-
-    println!("entry insert4: {:?}", array.entry(b"abcd").or_insert(2));
-    println!("{:?}", array);
-
-    match array.entry(b"abcd") {
-        Entry::Occupied(ref mut entry) => { entry.insert(2); }
-        Entry::Vacant(_) => panic!(),
-    }
-    println!("{:?}", array);
-
-    match array.entry(b"abcd") {
-        Entry::Occupied(entry) => { entry.remove(); }
-        Entry::Vacant(_) => panic!(),
-    }
-    println!("{:?}", array);
-
-
-    println!("remove1: {:?}", array);
-    let x = array.remove(b"abc");
-    println!("remove2: {:?} {:?}", array, x);
-
-    println!("drain1: {:?}", array);
-
-    for (key, value) in array.drain() {
-        println!("draining {:?} => {:?}", key, value);
-    }
-
-    println!("drain2: {:?}", array);
 }

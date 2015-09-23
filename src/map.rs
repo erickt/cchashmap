@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher, SipHasher};
 use std::iter::{self, FromIterator};
 use std::slice;
 
-use array::{self, Array};
+use array::{self, ArrayMap};
 
 use quickcheck;
 
@@ -12,7 +12,7 @@ static DEFAULT_CAPACITY: usize = 4096;
 
 #[derive(Clone)]
 pub struct CCHashMap<V> {
-    buckets: Vec<Array<V>>,
+    buckets: Vec<ArrayMap<V>>,
     len: usize,
 }
 
@@ -25,7 +25,7 @@ impl<V> CCHashMap<V> {
         assert!(len > 0);
 
         CCHashMap {
-            buckets: Vec::from_iter((0..len).map(|_| Array::new())),
+            buckets: Vec::from_iter((0..len).map(|_| ArrayMap::new())),
             len: 0,
         }
     }
@@ -168,19 +168,19 @@ impl<V> CCHashMap<V> {
         hash % self.buckets.len()
     }
 
-    fn get_bucket(&self, key: &[u8]) -> &Array<V> {
+    fn get_bucket(&self, key: &[u8]) -> &ArrayMap<V> {
         let index = self.get_bucket_index(key);
         &self.buckets[index]
     }
 
-    fn get_bucket_mut(&mut self, key: &[u8]) -> &mut Array<V> {
+    fn get_bucket_mut(&mut self, key: &[u8]) -> &mut ArrayMap<V> {
         let index = self.get_bucket_index(key);
         &mut self.buckets[index]
     }
 }
 
 pub struct Iter<'a, V: 'a> {
-    iter: slice::Iter<'a, Array<V>>,
+    iter: slice::Iter<'a, ArrayMap<V>>,
     bucket_iter: Option<array::Iter<'a, V>>,
     len: usize,
 }

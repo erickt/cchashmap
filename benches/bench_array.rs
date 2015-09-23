@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::iter::FromIterator;
 
 use byteorder::{ByteOrder, NativeEndian};
-use cchashmap::Array;
+use cchashmap::array::ArrayMap;
 
 static OUTER_LEN: usize = 128;
 static INNER_LEN: usize = 8;
@@ -62,8 +62,8 @@ bench_insert!(bench_insert_hashmap, fixture, {
     map
 });
 
-bench_insert!(bench_insert_array, fixture, {
-    let mut map = Array::<usize>::new();
+bench_insert!(bench_insert_arraymap, fixture, {
+    let mut map = ArrayMap::<usize>::new();
     for &(ref key, value) in fixture.iter() {
         map.insert(key, value.clone());
     }
@@ -96,8 +96,8 @@ bench_iter!(bench_iter_hashmap, fixture, {
     HashMap::<Vec<u8>, usize>::from_iter(fixture.into_iter())
 });
 
-bench_iter!(bench_iter_array, fixture, {
-    Array::<usize>::from_iter(fixture.into_iter())
+bench_iter!(bench_iter_arraymap, fixture, {
+    ArrayMap::<usize>::from_iter(fixture.into_iter())
 });
 
 macro_rules! bench_contains_key {
@@ -126,6 +126,6 @@ bench_contains_key!(bench_contains_key_hashmap, fixture, {
     HashMap::<Vec<u8>, usize>::from_iter(fixture.iter().cloned())
 });
 
-bench_contains_key!(bench_contains_key_array, fixture, {
-    Array::<usize>::from_iter(fixture.iter().cloned())
+bench_contains_key!(bench_contains_key_arraymap, fixture, {
+    ArrayMap::<usize>::from_iter(fixture.iter().cloned())
 });
