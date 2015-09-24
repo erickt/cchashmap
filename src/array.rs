@@ -176,17 +176,18 @@ impl<V> ArrayMap<V> {
     /// assert_eq!(map.insert(37, "c"), Some("b"));
     /// assert_eq!(map[&37], "c");
     /// ```
-    pub fn insert(&mut self, key: &[u8], value: V) -> bool {
+    #[inline(never)]
+    pub fn insert(&mut self, key: &[u8], mut value: V) -> Option<V> {
         for (k, v) in self.iter_mut() {
             if key == k {
-                *v = value;
-                return true;
+                mem::swap(v, &mut value);
+                return Some(value);
             }
         }
 
         self.push(key, value);
 
-        false
+        None
     }
 
     /// Removes a key from the map, returning the value at the key if the key
@@ -345,38 +346,41 @@ impl<V> ArrayMap<V> {
         IterRaw::new(self, end)
     }
 
-    pub fn push(&mut self, key: &[u8], value: V) -> &mut V {
+    #[inline(never)]
+    fn push(&mut self, key: &[u8], value: V) -> &mut V {
+        let buf_len = self.buf.len();
+
+        // First, make sure we reserve enough space to write everything.
+        // FIXME: Account for alignment.
+        let len_len = mem::size_of::<usize>();
+        let key_len = key.len();
+        let value_len = mem::size_of::<V>();
+        let len = buf_len + len_len + key_len + value_len;
+        self.buf.reserve_exact(len);
+
         unsafe {
-            let buf_len = self.buf.len();
-
-            // First, make sure we reserve enough space to write everything.
-            // FIXME: Account for alignment.
-            let len_len = mem::size_of::<usize>();
-            let key_len = key.len();
-            let value_len = mem::size_of::<V>();
-            let len = buf_len + len_len + key_len + value_len;
-            self.buf.reserve_exact(len);
-
             // Grab a pointer that's pointing to the end of the space.
-            let mut end = self.buf.as_mut_ptr().offset(buf_len as isize);
+            let mut ptr = self.buf.as_mut_ptr().offset(buf_len as isize);
 
-            // First, write the value.
-            ptr::write(end as *mut V, value);
-            end = end.offset(value_len as isize);
+            // Write the length at the end and adjust the pointer.
+            ptr::write(ptr as *mut usize, key_len);
+            ptr = ptr.offset(len_len as isize);
 
-            // Next, write the length at the end and adjust the pointer.
-            ptr::write(end as *mut usize, key_len);
-            end = end.offset(len_len as isize);
+            // Write the key.
+            ptr::copy_nonoverlapping(key.as_ptr(), ptr, key_len);
+            ptr = ptr.offset(key_len as isize);
 
-            // Next, write the key.
-            ptr::copy_nonoverlapping(key.as_ptr(), end, key_len);
-            end = end.offset(key_len as isize);
+            // Write the value.
+            ptr::write(ptr as *mut V, value);
 
             // Finally, adjust the buffer length.
             self.buf.set_len(len);
+
             self.len += 1;
 
-            mem::transmute(end)
+            assert!(self.buf.len() <= self.buf.capacity());
+
+            mem::transmute(ptr)
         }
     }
 }
@@ -440,22 +444,22 @@ impl<'a, V> RawItem<'a, V> {
 
     #[inline(always)]
     fn key_len_index(&self) -> usize {
-        self.value_index() + mem::size_of::<V>()
-    }
-
-    #[inline(always)]
-    fn key_index(&self) -> usize {
-        self.key_len_index() + mem::size_of::<usize>()
-    }
-
-    #[inline(always)]
-    fn value_index(&self) -> usize {
         self.index
     }
 
     #[inline(always)]
-    fn next_index(&self) -> usize {
+    fn key_index(&self) -> usize {
+        self.index + mem::size_of::<usize>()
+    }
+
+    #[inline(always)]
+    fn value_index(&self) -> usize {
         self.key_index() + self.key_len()
+    }
+
+    #[inline(always)]
+    fn next_index(&self) -> usize {
+        self.value_index() + mem::size_of::<V>()
     }
 
     #[inline(always)]

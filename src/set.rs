@@ -72,10 +72,24 @@ impl CCHashSet {
         self.map.clear()
     }
 
+    /// Adds a value to the set. Returns `true` if the value was not already
+    /// present in the set.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeSet;
+    ///
+    /// let mut set = BTreeSet::new();
+    ///
+    /// assert_eq!(set.insert(2), true);
+    /// assert_eq!(set.insert(2), false);
+    /// assert_eq!(set.len(), 1);
+    /// ```
     pub fn insert<T>(&mut self, key: T) -> bool
         where T: Borrow<[u8]>
     {
-        self.map.insert(key, ())
+        self.map.insert(key, ()).is_none()
     }
 
     /// Gets an iterator over the BTreeSet's contents.

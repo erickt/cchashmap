@@ -20,11 +20,15 @@ fn make_fixture() -> (Vec<String>) {
     let mut words = Vec::new();
     for line in BufReader::new(file).lines() {
         for word in line.unwrap().split(' ') {
-            //for suffix in "ab".chars() {
+            let w = word.to_owned();
+            words.push(w);
+            /*
+            for suffix in "ab".chars() {
                 let mut w = word.to_owned();
-                //w.push(suffix);
+                w.push(suffix);
                 words.push(w);
-            //}
+            }
+            */
         }
     }
 
@@ -77,7 +81,8 @@ fn make_arraymap(fixture: &[String]) -> ArrayMap<usize> {
 */
 
 fn make_cchashmap(fixture: &[String]) -> CCHashMap<usize> {
-    let mut map = CCHashMap::<usize>::with_capacity(4096);
+    let mut map = CCHashMap::with_capacity(4096);
+
     for key in fixture.iter() {
         let count = map.entry(key.as_bytes()).or_insert(0);
         *count = *count + 1;

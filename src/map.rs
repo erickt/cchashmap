@@ -134,27 +134,33 @@ impl<V> CCHashMap<V> {
         self.get_bucket_mut(key).get_mut(key)
     }
 
-    pub fn insert<T>(&mut self, key: T, value: V) -> bool
+    /// Inserts a key-value pair into the map. If the key already had a value
+    /// present in the map, that value is returned. Otherwise, `None` is returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    ///
+    /// let mut map = BTreeMap::new();
+    /// assert_eq!(map.insert(37, "a"), None);
+    /// assert_eq!(map.is_empty(), false);
+    ///
+    /// map.insert(37, "b");
+    /// assert_eq!(map.insert(37, "c"), Some("b"));
+    /// assert_eq!(map[&37], "c");
+    /// ```
+    pub fn insert<T>(&mut self, key: T, value: V) -> Option<V>
         where T: Borrow<[u8]>
     {
         let key = key.borrow();
+        let old_value = self.get_bucket_mut(key).insert(key, value);
 
-        let inserted = {
-            let bucket = self.get_bucket_mut(key);
-            let contains = bucket.contains_key(key);
-
-            if !contains {
-                bucket.insert(key, value);
-            }
-
-            !contains
-        };
-
-        if inserted {
+        if old_value.is_none() {
             self.len += 1;
         }
 
-        inserted
+        old_value
     }
 
     /// Removes a key from the map, returning the value at the key if the key
@@ -250,10 +256,22 @@ impl<V> CCHashMap<V> {
     /// assert_eq!(letters.get(&'y'), None);
     /// ```
     pub fn entry<'a, 'b>(&'a mut self, key: &'b [u8]) -> Entry<'a, 'b, V> {
-        let bucket = self.get_bucket_mut(key);
-        match bucket.entry(key) {
-            array::Entry::Vacant(entry) => Entry::Vacant(VacantEntry(entry)),
-            array::Entry::Occupied(entry) => Entry::Occupied(OccupiedEntry(entry)),
+        let index = self.get_bucket_index(key);
+
+        let &mut CCHashMap { ref mut buckets, ref mut len } = self;
+
+        match buckets[index].entry(key) {
+            array::Entry::Vacant(entry) => {
+                Entry::Vacant(VacantEntry {
+                    len: len,
+                    entry: entry,
+                })
+            }
+            array::Entry::Occupied(entry) => {
+                Entry::Occupied(OccupiedEntry {
+                    entry: entry,
+                })
+            }
         }
     }
 
@@ -358,10 +376,15 @@ pub enum Entry<'a, 'b, V: 'a> {
 }
 
 /// A vacant Entry.
-pub struct VacantEntry<'a, 'b, V: 'a>(array::VacantEntry<'a, 'b, V>);
+pub struct VacantEntry<'a, 'b, V: 'a> {
+    len: &'a mut usize,
+    entry: array::VacantEntry<'a, 'b, V>,
+}
 
 /// An occupied Entry.
-pub struct OccupiedEntry<'a, V: 'a>(array::OccupiedEntry<'a, V>);
+pub struct OccupiedEntry<'a, V: 'a> {
+    entry: array::OccupiedEntry<'a, V>,
+}
 
 impl<'a, 'b, V> Entry<'a, 'b, V> {
     /// Ensures a value is in the entry by inserting the default if empty, and returns
@@ -386,28 +409,28 @@ impl<'a, 'b, V> Entry<'a, 'b, V> {
 impl<'a, V> OccupiedEntry<'a, V> {
     /// Gets a reference to the value in the entry.
     pub fn get(&self) -> &V {
-        self.0.get()
+        self.entry.get()
     }
 
     /// Gets a mutable reference to the value in the entry.
     pub fn get_mut(&mut self) -> &mut V {
-        self.0.get_mut()
+        self.entry.get_mut()
     }
 
     /// Converts the OccupiedEntry into a mutable reference to the value in the entry
     /// with a lifetime bound to the map itself
     pub fn into_mut(self) -> &'a mut V {
-        self.0.into_mut()
+        self.entry.into_mut()
     }
 
     /// Sets the value of the entry, and returns the entry's old value
     pub fn insert(&mut self, value: V) -> V {
-        self.0.insert(value)
+        self.entry.insert(value)
     }
 
     /// Takes the value out of the entry, and returns it
     pub fn remove(self) -> V {
-        self.0.remove()
+        self.entry.remove()
     }
 }
 
@@ -415,7 +438,8 @@ impl<'a, 'b, V: 'a> VacantEntry<'a, 'b, V> {
     /// Sets the value of the entry with the VacantEntry's key,
     /// and returns a mutable reference to it
     pub fn insert(self, value: V) -> &'a mut V {
-        self.0.insert(value)
+        *self.len = *self.len + 1;
+        self.entry.insert(value)
     }
 }
 
