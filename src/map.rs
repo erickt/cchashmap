@@ -80,29 +80,6 @@ impl<V> CCHashMap<V> {
         }
     }
 
-    pub fn insert<T>(&mut self, key: T, value: V) -> bool
-        where T: Borrow<[u8]>
-    {
-        let key = key.borrow();
-
-        let inserted = {
-            let bucket = self.get_bucket_mut(key);
-            let contains = bucket.contains_key(key);
-
-            if !contains {
-                bucket.insert(key, value);
-            }
-
-            !contains
-        };
-
-        if inserted {
-            self.len += 1;
-        }
-
-        inserted
-    }
-
     pub fn contains_key<K>(&self, key: K) -> bool
         where K: Borrow<[u8]>
     {
@@ -155,6 +132,52 @@ impl<V> CCHashMap<V> {
     {
         let key = key.borrow();
         self.get_bucket_mut(key).get_mut(key)
+    }
+
+    pub fn insert<T>(&mut self, key: T, value: V) -> bool
+        where T: Borrow<[u8]>
+    {
+        let key = key.borrow();
+
+        let inserted = {
+            let bucket = self.get_bucket_mut(key);
+            let contains = bucket.contains_key(key);
+
+            if !contains {
+                bucket.insert(key, value);
+            }
+
+            !contains
+        };
+
+        if inserted {
+            self.len += 1;
+        }
+
+        inserted
+    }
+
+    /// Removes a key from the map, returning the value at the key if the key
+    /// was previously in the map.
+    ///
+    /// The key may be any borrowed form of the map's key type, but the ordering
+    /// on the borrowed form *must* match the ordering on the key type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    ///
+    /// let mut map = BTreeMap::new();
+    /// map.insert(1, "a");
+    /// assert_eq!(map.remove(&1), Some("a"));
+    /// assert_eq!(map.remove(&1), None);
+    /// ```
+    pub fn remove<K>(&mut self, key: K) -> Option<V>
+        where K: Borrow<[u8]>
+    {
+        let key = key.borrow();
+        self.get_bucket_mut(key).remove(key)
     }
 
     pub fn iter<'a>(&'a self) -> Iter<'a, V> {

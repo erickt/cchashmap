@@ -1,4 +1,4 @@
-#![cfg(feature = "map")]
+//#![cfg(feature = "map")]
 #![feature(test)]
 
 extern crate test;
@@ -20,11 +20,11 @@ fn make_fixture() -> (Vec<String>) {
     let mut words = Vec::new();
     for line in BufReader::new(file).lines() {
         for word in line.unwrap().split(' ') {
-            for suffix in "ab".chars() {
+            //for suffix in "ab".chars() {
                 let mut w = word.to_owned();
-                w.push(suffix);
+                //w.push(suffix);
                 words.push(w);
-            }
+            //}
         }
     }
 
@@ -164,3 +164,71 @@ bench_get!(bench_get_btreemap, make_btreemap);
 bench_get!(bench_get_hashmap, make_hashmap);
 //bench_get!(bench_get_arraymap, make_arraymap);
 bench_get!(bench_get_cchashmap, make_cchashmap);
+
+macro_rules! bench_contains_key {
+    ($name:ident, $ctor:expr) => {
+        #[bench]
+        fn $name(b: &mut test::Bencher) {
+            let fixture = make_fixture();
+            b.bytes = fixture.iter().fold(0, |sum, word| sum + word.len() as u64);
+            let haystack = $ctor(&fixture);
+
+            b.iter(|| {
+                for key in fixture.iter() {
+                    test::black_box(haystack.contains_key(key.as_bytes()));
+                }
+            })
+        }
+
+    }
+}
+
+bench_contains_key!(bench_contains_key_btreemap, make_btreemap);
+bench_contains_key!(bench_contains_key_hashmap, make_hashmap);
+//bench_contains_key!(bench_contains_key_arraymap, make_arraymap);
+bench_contains_key!(bench_contains_key_cchashmap, make_cchashmap);
+
+macro_rules! bench_clone {
+    ($name:ident, $ctor:expr) => {
+        #[bench]
+        fn $name(b: &mut test::Bencher) {
+            let fixture = make_fixture();
+            b.bytes = fixture.iter().fold(0, |sum, word| sum + word.len() as u64);
+            let haystack = $ctor(&fixture);
+
+            b.iter(|| {
+                test::black_box(haystack.clone());
+            })
+        }
+
+    }
+}
+
+bench_clone!(bench_clone_btreemap, make_btreemap);
+bench_clone!(bench_clone_hashmap, make_hashmap);
+//bench_clone!(bench_clone_arraymap, make_arraymap);
+bench_clone!(bench_clone_cchashmap, make_cchashmap);
+
+macro_rules! bench_remove {
+    ($name:ident, $ctor:expr) => {
+        #[bench]
+        fn $name(b: &mut test::Bencher) {
+            let fixture = make_fixture();
+            b.bytes = fixture.iter().fold(0, |sum, word| sum + word.len() as u64);
+            let haystack = $ctor(&fixture);
+
+            b.iter(|| {
+                let mut haystack = haystack.clone();
+                for key in fixture.iter() {
+                    test::black_box(haystack.remove(key.as_bytes()));
+                }
+            })
+        }
+
+    }
+}
+
+bench_remove!(bench_remove_btreemap, make_btreemap);
+bench_remove!(bench_remove_hashmap, make_hashmap);
+//bench_remove!(bench_remove_arraymap, make_arraymap);
+bench_remove!(bench_remove_cchashmap, make_cchashmap);

@@ -3,6 +3,7 @@ use std::fmt;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::mem;
+use std::ops::Index;
 use std::ptr;
 use std::slice;
 
@@ -95,11 +96,21 @@ impl<V> ArrayMap<V> {
     /// assert_eq!(map.get(&1), Some(&"a"));
     /// assert_eq!(map.get(&2), None);
     /// ```
+    #[inline]
     pub fn get<K>(&self, key: K) -> Option<&V>
         where K: Borrow<[u8]>
     {
         let key = key.borrow();
-        self.iter().find(|&(k, _)| key == k).map(|(_, v)| v)
+
+        unsafe {
+            for item in self.iter_raw() {
+                if item.key() == key {
+                    return Some(item.value_ref());
+                }
+            }
+        }
+
+        None
     }
 
     /// Returns true if the map contains a value for the specified key.
@@ -323,10 +334,12 @@ impl<V> ArrayMap<V> {
         }
     }
 
+    #[inline]
     unsafe fn iter_raw<'a>(&'a self) -> IterRaw<'a, V> {
         self.iter_raw_len(self.buf.len(), self.len)
     }
 
+    #[inline]
     unsafe fn iter_raw_len<'a>(&'a self, end: usize, len: usize) -> IterRaw<'a, V> {
         IterRaw {
             array: self,
@@ -336,7 +349,8 @@ impl<V> ArrayMap<V> {
         }
     }
 
-    pub fn push(&mut self, key: &[u8], value: V) -> &mut V {
+    #[inline]
+    fn push(&mut self, key: &[u8], value: V) -> &mut V {
         unsafe {
             let buf_len = self.buf.len();
 
@@ -371,6 +385,7 @@ impl<V> ArrayMap<V> {
         }
     }
 
+    #[inline]
     fn raw_item_at(&self, index: usize, end: usize) -> Option<RawItem<V>> {
         if index == end {
             None
@@ -389,6 +404,17 @@ impl<T> Drop for ArrayMap<T> {
         // FIXME: Replace with `std::intrinsics::drop_in_place` once stabilized.
         // For now, just let drain take care of dropping all our items.
         self.drain();
+    }
+}
+
+impl<'a, K, V> Index<&'a K> for ArrayMap<V>
+    where K: Borrow<[u8]>
+{
+    type Output = V;
+
+    #[inline]
+    fn index(&self, key: &K) -> &V {
+        self.get(key.borrow()).expect("no entry found for key")
     }
 }
 
@@ -421,28 +447,34 @@ struct RawItem<'a, V: 'a> {
 }
 
 impl<'a, V> RawItem<'a, V> {
+    #[inline(always)]
     fn key_len_index(&self) -> usize {
         self.value_index() + mem::size_of::<V>()
     }
 
+    #[inline(always)]
     fn key_index(&self) -> usize {
         self.key_len_index() + mem::size_of::<usize>()
     }
 
+    #[inline(always)]
     fn value_index(&self) -> usize {
         self.index
     }
 
+    #[inline(always)]
     fn next_index(&self) -> usize {
         self.key_index() + self.key_len()
     }
 
+    #[inline(always)]
     fn key_len(&self) -> usize {
         unsafe {
             ptr::read(self.ptr.offset(self.key_len_index() as isize) as *const usize)
         }
     }
 
+    #[inline(always)]
     fn key(&self) -> &'a [u8] {
         unsafe {
             slice::from_raw_parts(
@@ -451,9 +483,31 @@ impl<'a, V> RawItem<'a, V> {
         }
     }
 
-    fn value(&self) -> *const V {
+    #[inline(always)]
+    fn value_ptr(&self) -> *const V {
         unsafe {
             self.ptr.offset(self.value_index() as isize) as *const V
+        }
+    }
+
+    #[inline(always)]
+    fn value(&self) -> V {
+        unsafe {
+            ptr::read(self.value_ptr())
+        }
+    }
+
+    #[inline(always)]
+    fn value_ref(&self) -> &'a V {
+        unsafe {
+            mem::transmute(self.value_ptr())
+        }
+    }
+
+    #[inline(always)]
+    fn value_ref_mut(&self) -> &'a mut V {
+        unsafe {
+            mem::transmute(self.value_ptr())
         }
     }
 }
@@ -469,6 +523,7 @@ struct IterRaw<'a, V: 'a> {
 impl<'a, V> Iterator for IterRaw<'a, V> {
     type Item = RawItem<'a, V>;
 
+    #[inline(always)]
     fn next(&mut self) -> Option<RawItem<'a, V>> {
         match self.array.raw_item_at(self.index, self.end) {
             Some(raw_item) => {
@@ -480,6 +535,7 @@ impl<'a, V> Iterator for IterRaw<'a, V> {
         }
     }
 
+    #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len, Some(self.len))
     }
@@ -488,14 +544,13 @@ impl<'a, V> Iterator for IterRaw<'a, V> {
 
 
 macro_rules! iterator {
-    (struct $name:ident -> $elem:ty, $read:expr) => {
+    (struct $name:ident -> $elem:ty, $read:ident) => {
         impl<'a, V> Iterator for $name<'a, V> {
             type Item = (&'a [u8], $elem);
 
+            #[inline]
             fn next(&mut self) -> Option<(&'a [u8], $elem)> {
-                self.iter.next().map(|item| {
-                    (item.key(), unsafe { $read(item.value()) })
-                })
+                self.iter.next().map(|item| (item.key(), item.$read()))
             }
 
             fn size_hint(&self) -> (usize, Option<usize>) {
@@ -509,19 +564,19 @@ pub struct Iter<'a, V: 'a> {
     iter: IterRaw<'a, V>,
 }
 
-iterator! { struct Iter -> &'a V, mem::transmute }
+iterator! { struct Iter -> &'a V, value_ref }
 
 pub struct IterMut<'a, V: 'a> {
     iter: IterRaw<'a, V>,
 }
 
-iterator! { struct IterMut -> &'a mut V, mem::transmute }
+iterator! { struct IterMut -> &'a mut V, value_ref_mut }
 
 pub struct Drain<'a, V: 'a> {
     iter: IterRaw<'a, V>,
 }
 
-iterator! { struct Drain -> V, ptr::read }
+iterator! { struct Drain -> V, value }
 
 unsafe impl<'a, T: Sync> Sync for Drain<'a, T> {}
 unsafe impl<'a, T: Send> Send for Drain<'a, T> {}
