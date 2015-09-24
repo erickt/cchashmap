@@ -52,7 +52,7 @@ fn quickcheck_array_insert_and_get() {
         }
 
         for (key, value) in map.iter() {
-            if array.get(key) != Some(value) {
+            if array.get(&**key) != Some(value) {
                 return false;
             }
         }
@@ -63,7 +63,7 @@ fn quickcheck_array_insert_and_get() {
             missing_key.push(0);
         }
 
-        array.get(&missing_key).is_none()
+        array.get(&*missing_key).is_none()
     }
 
     quickcheck::quickcheck(prop as fn(BTreeMap<Vec<u8>, u32>) -> bool);
