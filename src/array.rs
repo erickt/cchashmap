@@ -103,9 +103,9 @@ impl<V> ArrayMap<V> {
         let key = key.borrow();
 
         unsafe {
-            for item in self.iter_raw() {
-                if item.key() == key {
-                    return Some(item.value_ref());
+            for (key_ptr, key_len, value_ptr) in self.iter_raw() {
+                if key == slice::from_raw_parts(key_ptr, key_len) {
+                    return Some(mem::transmute(value_ptr));
                 }
             }
         }
@@ -214,31 +214,36 @@ impl<V> ArrayMap<V> {
 
         unsafe {
             let item = self.iter_raw()
-                .find(|item| item.key() == key)
-                .map(|item| (item.value_index(), item.next_index()));
+                .find(|&(key_ptr, key_len, _)| key == slice::from_raw_parts(key_ptr, key_len));
 
             match item {
-                Some((value_index, next_index)) => Some(self.remove_at(value_index, next_index)),
+                Some((key_ptr, key_len, value_ptr)) => Some(self.remove_at(key_ptr, key_len, value_ptr)),
                 None => None,
             }
         }
     }
 
-    unsafe fn remove_at(&mut self, value_index: usize, next_index: usize) -> V {
+    unsafe fn remove_at(&mut self, key_ptr: *const u8, key_len: usize, value_ptr: *const V) -> V {
         let buf_ptr = self.buf.as_ptr();
-        let value_ptr = buf_ptr.offset(value_index as isize);
-        let next_ptr = buf_ptr.offset(next_index as isize);
-        let remaining_items = self.buf.len() - next_index;
+        let end_ptr = buf_ptr.offset(self.buf.len() as isize);
 
-        let value: V = ptr::read(value_ptr as *const V);
+        let next_ptr = (value_ptr as *const u8).offset(mem::size_of::<V>() as isize);
+        let remaining_bytes = (end_ptr as usize) - (next_ptr as usize);
 
         // Truncate the buffer so we don't drop the value twice if there's a panic.
-        self.buf.set_len(value_index);
+        let item_ptr = key_ptr.offset(-(mem::size_of::<usize>() as isize));
+        let item_index = (item_ptr as usize) - (buf_ptr as usize);
+
+        self.buf.set_len(item_index);
+
+        // Read out the value. We now own it since the buffer was truncated.
+        let value: V = ptr::read(value_ptr);
 
         // Move the remaining items into this item's spot.
-        ptr::copy(next_ptr, value_ptr as *mut u8, remaining_items);
+        ptr::copy(next_ptr, value_ptr as *mut u8, remaining_bytes);
 
-        self.buf.set_len(value_index + remaining_items);
+        // Finally, restore the length, minus the item we removed.
+        self.buf.set_len(item_index + remaining_bytes);
 
         value
     }
@@ -273,15 +278,16 @@ impl<V> ArrayMap<V> {
     pub fn entry<'a, 'b>(&'a mut self, key: &'b [u8]) -> Entry<'a, 'b, V> {
         unsafe {
             let item = self.iter_raw()
-                .find(|item| item.key() == key)
-                .map(|item| (item.value_index(), item.next_index()));
+                .find(|&(key_ptr, key_len, _)| key == slice::from_raw_parts(key_ptr, key_len));
 
             match item {
-                Some((value_index, next_index)) => {
+                Some((key_ptr, key_len, value_ptr)) => {
                     Entry::Occupied(OccupiedEntry {
                         array: self,
-                        value_index: value_index,
-                        next_index: next_index,
+                        key_ptr: key_ptr,
+                        key_len: key_len,
+                        value_ptr: value_ptr,
+                        _marker: PhantomData,
                     })
                 }
                 None => {
@@ -299,6 +305,7 @@ impl<V> ArrayMap<V> {
             Iter {
                 iter: self.iter_raw(),
                 len: self.len,
+                _marker: PhantomData,
             }
         }
     }
@@ -308,6 +315,7 @@ impl<V> ArrayMap<V> {
             IterMut {
                 iter: self.iter_raw(),
                 len: self.len,
+                _marker: PhantomData,
             }
         }
     }
@@ -334,16 +342,22 @@ impl<V> ArrayMap<V> {
             Drain {
                 iter: self.iter_raw_len(buf_len),
                 len: len,
+                _marker: PhantomData,
             }
         }
     }
 
-    unsafe fn iter_raw<'a>(&'a self) -> IterRaw<'a, V> {
+    unsafe fn iter_raw(&self) -> IterRaw<V> {
         self.iter_raw_len(self.buf.len())
     }
 
-    unsafe fn iter_raw_len<'a>(&'a self, end: usize) -> IterRaw<'a, V> {
-        IterRaw::new(self, end)
+    unsafe fn iter_raw_len(&self, end: usize) -> IterRaw<V> {
+        let ptr = self.buf.as_ptr();
+        IterRaw {
+            ptr: ptr,
+            end: ptr.offset(end as isize),
+            _marker: PhantomData,
+        }
     }
 
     #[inline(never)]
@@ -428,28 +442,21 @@ impl<V> fmt::Debug for ArrayMap<V> where V: fmt::Debug {
 
 struct RawItem<'a, V: 'a> {
     ptr: *const u8,
-    index: usize,
     _marker: PhantomData<&'a V>,
 }
 
 impl<'a, V> RawItem<'a, V> {
     #[inline(always)]
-    fn new(ptr: *const u8, index: usize) -> Self {
+    fn new(ptr: *const u8) -> Self {
         RawItem {
             ptr: ptr,
-            index: index,
             _marker: PhantomData,
         }
     }
 
     #[inline(always)]
-    fn key_len_index(&self) -> usize {
-        self.index
-    }
-
-    #[inline(always)]
     fn key_index(&self) -> usize {
-        self.index + mem::size_of::<usize>()
+        mem::size_of::<usize>()
     }
 
     #[inline(always)]
@@ -465,7 +472,7 @@ impl<'a, V> RawItem<'a, V> {
     #[inline(always)]
     fn key_len(&self) -> usize {
         unsafe {
-            ptr::read(self.ptr.offset(self.key_len_index() as isize) as *const usize)
+            ptr::read(self.ptr as *const usize)
         }
     }
 
@@ -493,37 +500,36 @@ impl<'a, V> RawItem<'a, V> {
     }
 }
 
+unsafe fn raw_item<V>(mut ptr: *const u8) -> (*const u8, usize, *const V, *const u8) {
+    let key_len = ptr::read(ptr as *const usize);
+    let key_ptr = ptr.offset(mem::size_of::<usize>() as isize);
+    let value_ptr = key_ptr.offset(key_len as isize);
+    let next_ptr = value_ptr.offset(mem::size_of::<V>() as isize);
 
-struct IterRaw<'a, V: 'a> {
-    array: &'a ArrayMap<V>,
-    index: usize,
-    end: usize,
-    _marker: PhantomData<&'a ()>,
+    (key_ptr, key_len, value_ptr as *const V, next_ptr)
 }
 
-impl<'a, V> IterRaw<'a, V> {
-    #[inline(always)]
-    fn new(array: &'a ArrayMap<V>, end: usize) -> Self {
-        IterRaw {
-            array: array,
-            index: 0,
-            end: end,
-            _marker: PhantomData,
-        }
-    }
+
+struct IterRaw<V> {
+    ptr: *const u8,
+    end: *const u8,
+    _marker: PhantomData<V>,
 }
 
-impl<'a, V> Iterator for IterRaw<'a, V> {
-    type Item = RawItem<'a, V>;
+impl<V> Iterator for IterRaw<V> {
+    type Item = (*const u8, usize, *const V);
 
     #[inline(always)]
-    fn next(&mut self) -> Option<RawItem<'a, V>> {
-        if self.index == self.end {
+    fn next(&mut self) -> Option<(*const u8, usize, *const V)> {
+        if self.ptr == self.end {
             None
         } else {
-            let raw_item = RawItem::new(self.array.buf.as_ptr(), self.index);
-            self.index = raw_item.next_index();
-            Some(raw_item)
+            unsafe {
+                let (key_ptr, key_len, value_ptr, next_ptr) = raw_item(self.ptr);
+                self.ptr = next_ptr;
+
+                Some((key_ptr, key_len, value_ptr))
+            }
         }
     }
 }
@@ -535,9 +541,13 @@ macro_rules! iterator {
 
             fn next(&mut self) -> Option<(&'a [u8], $elem)> {
                 match self.iter.next() {
-                    Some(item) => {
+                    Some((key_ptr, len, value_ptr)) => {
                         self.len -= 1;
-                        Some((item.key(), unsafe { $read(item.value_ptr()) }))
+                        unsafe {
+                            let key = slice::from_raw_parts(key_ptr, len);
+                            let value = $read(value_ptr);
+                            Some((key, value))
+                        }
                     }
                     None => None,
                 }
@@ -552,22 +562,25 @@ macro_rules! iterator {
 }
 
 pub struct Iter<'a, V: 'a> {
-    iter: IterRaw<'a, V>,
+    iter: IterRaw<V>,
     len: usize,
+    _marker: PhantomData<&'a V>,
 }
 
 iterator! { struct Iter -> &'a V, mem::transmute }
 
 pub struct IterMut<'a, V: 'a> {
-    iter: IterRaw<'a, V>,
+    iter: IterRaw<V>,
     len: usize,
+    _marker: PhantomData<&'a V>,
 }
 
 iterator! { struct IterMut -> &'a mut V, mem::transmute }
 
 pub struct Drain<'a, V: 'a> {
-    iter: IterRaw<'a, V>,
+    iter: IterRaw<V>,
     len: usize,
+    _marker: PhantomData<&'a V>,
 }
 
 iterator! { struct Drain -> V, ptr::read }
@@ -602,8 +615,10 @@ pub struct VacantEntry<'a, 'b, V: 'a> {
 /// An occupied Entry.
 pub struct OccupiedEntry<'a, V: 'a> {
     array: &'a mut ArrayMap<V>,
-    value_index: usize,
-    next_index: usize,
+    key_ptr: *const u8,
+    key_len: usize,
+    value_ptr: *const V,
+    _marker: PhantomData<&'a V>,
 }
 
 impl<'a, 'b, V> Entry<'a, 'b, V> {
@@ -630,14 +645,14 @@ impl<'a, V> OccupiedEntry<'a, V> {
     /// Gets a reference to the value in the entry.
     pub fn get(&self) -> &V {
         unsafe {
-            self.array.get_value_at(self.value_index)
+            mem::transmute(self.value_ptr)
         }
     }
 
     /// Gets a mutable reference to the value in the entry.
     pub fn get_mut(&mut self) -> &mut V {
         unsafe {
-            self.array.get_mut_value_at(self.value_index)
+            mem::transmute(self.value_ptr)
         }
     }
 
@@ -645,7 +660,7 @@ impl<'a, V> OccupiedEntry<'a, V> {
     /// with a lifetime bound to the map itself
     pub fn into_mut(self) -> &'a mut V {
         unsafe {
-            self.array.get_mut_value_at(self.value_index)
+            mem::transmute(self.value_ptr)
         }
     }
 
@@ -659,7 +674,7 @@ impl<'a, V> OccupiedEntry<'a, V> {
     /// Takes the value out of the entry, and returns it
     pub fn remove(self) -> V {
         unsafe {
-            self.array.remove_at(self.value_index, self.next_index)
+            self.array.remove_at(self.key_ptr, self.key_len, self.value_ptr)
         }
     }
 }

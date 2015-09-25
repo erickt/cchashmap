@@ -189,7 +189,7 @@ impl<V> CCHashMap<V> {
     pub fn iter<'a>(&'a self) -> Iter<'a, V> {
         Iter {
             iter: self.buckets.iter(),
-            bucket_iter: None,
+            array_iter: None,
             len: self.len,
         }
     }
@@ -234,6 +234,16 @@ impl<V> CCHashMap<V> {
         let second: fn((&'a [u8], &'a V)) -> &'a V = second; // coerce to fn pointer
 
         Values { inner: self.iter().map(second) }
+    }
+
+    pub fn drain<'a>(&'a mut self) -> Drain<'a, V> {
+        let &mut CCHashMap { ref mut buckets, ref mut len } = self;
+
+        Drain {
+            inner: buckets.iter_mut(),
+            array_iter: None,
+            len: len,
+        }
     }
 
     /// Gets the given key's corresponding entry in the map for in-place manipulation.
@@ -296,7 +306,7 @@ impl<V> CCHashMap<V> {
 
 pub struct Iter<'a, V: 'a> {
     iter: slice::Iter<'a, ArrayMap<V>>,
-    bucket_iter: Option<array::Iter<'a, V>>,
+    array_iter: Option<array::Iter<'a, V>>,
     len: usize,
 }
 
@@ -305,7 +315,7 @@ impl<'a, V> Iterator for Iter<'a, V> {
 
     fn next(&mut self) -> Option<(&'a [u8], &'a V)> {
         loop {
-            match self.bucket_iter {
+            match self.array_iter {
                 Some(ref mut iter) => {
                     match iter.next() {
                         Some(key) => {
@@ -319,7 +329,7 @@ impl<'a, V> Iterator for Iter<'a, V> {
             }
 
             match self.iter.next() {
-                Some(bucket) => { self.bucket_iter = Some(bucket.iter()); }
+                Some(bucket) => { self.array_iter = Some(bucket.iter()); }
                 None => { return None; }
             }
         }
@@ -352,6 +362,50 @@ impl<'a, V> Iterator for Values<'a, V> {
 
     fn next(&mut self) -> Option<&'a V> { self.inner.next() }
     fn size_hint(&self) -> (usize, Option<usize>) { self.inner.size_hint() }
+}
+
+pub struct Drain<'a, V: 'a> {
+    inner: slice::IterMut<'a, ArrayMap<V>>,
+    array_iter: Option<array::Drain<'a, V>>,
+    len: &'a mut usize,
+}
+
+impl<'a, V> Iterator for Drain<'a, V> {
+    type Item = (&'a [u8], V);
+
+    fn next(&mut self) -> Option<(&'a [u8], V)> {
+        loop {
+            match self.array_iter {
+                Some(ref mut iter) => {
+                    match iter.next() {
+                        Some(key) => {
+                            *self.len = *self.len - 1;
+                            return Some(key);
+                        }
+                        None => { }
+                    }
+                }
+                None => { }
+            }
+
+            match self.inner.next() {
+                Some(array) => { self.array_iter = Some(array.drain()); }
+                None => { return None; }
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = *self.len;
+        (len, Some(len))
+    }
+}
+
+impl<'a, V> Drop for Drain<'a, V> {
+    fn drop(&mut self) {
+        // exhaust self first
+        while let Some(_) = self.next() { }
+    }
 }
 
 impl<K, V> FromIterator<(K, V)> for CCHashMap<V>

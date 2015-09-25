@@ -10,7 +10,7 @@ use std::iter::FromIterator;
 use cchashmap::array::ArrayMap;
 
 #[test]
-fn quickcheck_array_from_iter_and_iter() {
+fn quickcheck_from_iter_and_iter() {
     fn prop(map: BTreeMap<Vec<u8>, u32>) -> bool {
         let array = ArrayMap::from_iter(map.iter().map(|(k, v)| (&**k, *v)));
 
@@ -43,7 +43,7 @@ fn quickcheck_array_from_iter_and_iter() {
 }
 
 #[test]
-fn quickcheck_array_insert_and_get() {
+fn quickcheck_insert_and_get() {
     fn prop(map: BTreeMap<Vec<u8>, u32>) -> bool {
         let mut array = ArrayMap::new();
 
@@ -104,7 +104,7 @@ fn test_drain_one() {
 }
 
 #[test]
-fn quickcheck_array_drain() {
+fn quickcheck_drain() {
     fn prop(map: BTreeMap<Vec<u8>, u32>) -> bool {
         let mut array = ArrayMap::from_iter(map.iter().map(|(k, v)| (&**k, *v)));
 
