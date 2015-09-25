@@ -9,7 +9,6 @@ use std::slice;
 
 use quickcheck::{self, Arbitrary};
 
-#[derive(Clone)]
 pub struct ArrayMap<V> {
     buf: Vec<u8>,
     len: usize,
@@ -404,6 +403,20 @@ impl<T> Drop for ArrayMap<T> {
         // FIXME: Replace with `std::intrinsics::drop_in_place` once stabilized.
         // For now, just let drain take care of dropping all our items.
         self.drain();
+    }
+}
+
+impl<T: Clone> Clone for ArrayMap<T> {
+    fn clone(&self) -> Self {
+        unsafe {
+            let mut dst = ArrayMap::with_capacity_raw(self.buf.len());
+
+            for (key, value) in self.iter() {
+                dst.push(key, value.clone());
+            }
+
+            dst
+        }
     }
 }
 
