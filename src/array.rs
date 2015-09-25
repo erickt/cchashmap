@@ -21,6 +21,24 @@ impl<V> ArrayMap<V> {
     }
 
     pub fn with_capacity(cap: usize) -> Self {
+        // Guestimate how much capacity we will need. Assume keys will be on average 4 bytes long.
+        let len_size   = cap.checked_mul(mem::size_of::<usize>())
+            .expect("capacity overflow");
+
+        let key_size   = cap.checked_mul(mem::size_of::<*const u8>() * 4)
+            .expect("capacity overflow");
+
+        let value_size = cap.checked_mul(mem::size_of::<V>())
+            .expect("capacity overflow");
+
+        let size = len_size
+            .checked_add(key_size).expect("capacity overflow")
+            .checked_add(value_size).expect("capacity overflow");
+
+        ArrayMap::with_capacity_raw(size)
+    }
+
+    fn with_capacity_raw(cap: usize) -> Self {
         ArrayMap {
             buf: Vec::with_capacity(cap),
             len: 0,
