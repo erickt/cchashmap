@@ -8,10 +8,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::fs;
 use std::io::{BufReader, BufRead};
-use std::thread;
 
 use cchashmap::CCHashMap;
-//use cchashmap::array::ArrayMap;
 
 fn make_fixture() -> (Vec<String>) {
     let filename= env::var("FIXTURE").unwrap();
@@ -22,13 +20,6 @@ fn make_fixture() -> (Vec<String>) {
         for word in line.unwrap().split(' ') {
             let w = word.to_owned();
             words.push(w);
-            /*
-            for suffix in "ab".chars() {
-                let mut w = word.to_owned();
-                w.push(suffix);
-                words.push(w);
-            }
-            */
         }
     }
 
@@ -69,17 +60,6 @@ fn make_hashmap(fixture: &[String]) -> HashMap<Vec<u8>, usize> {
     map
 }
 
-/*
-fn make_arraymap(fixture: &[String]) -> ArrayMap<usize> {
-    let mut map = ArrayMap::<usize>::new();
-    for key in fixture.iter() {
-        let count = map.entry(key.as_bytes()).or_insert(0);
-        *count = *count + 1;
-    }
-    map
-}
-*/
-
 fn make_cchashmap(fixture: &[String]) -> CCHashMap<usize> {
     let mut map = CCHashMap::with_capacity(4096);
 
@@ -94,13 +74,9 @@ fn make_cchashmap(fixture: &[String]) -> CCHashMap<usize> {
 fn test_hashmap() {
     let fixture = make_fixture();
 
-    println!("before!");
-    thread::sleep_ms(3000);
-
-    let _hashmap = make_hashmap(&fixture);
-
-    println!("after!");
-    thread::sleep_ms(3000);
+    let haystack = make_cchashmap(&fixture);
+    let buckets = haystack.buckets.iter().map(|b| b.len()).collect::<Vec<_>>();
+    println!("{:?}", buckets);
 }
 
 macro_rules! bench_insert {
@@ -119,10 +95,9 @@ macro_rules! bench_insert {
     }
 }
 
-bench_insert!(bench_insert_btreemap, make_btreemap);
-bench_insert!(bench_insert_hashmap, make_hashmap);
-//bench_insert!(bench_insert_arraymap, make_arraymap);
-bench_insert!(bench_insert_cchashmap, make_cchashmap);
+bench_insert!(bench_btreemap_insert, make_btreemap);
+bench_insert!(bench_hashmap_insert, make_hashmap);
+bench_insert!(bench_cchashmap_insert, make_cchashmap);
 
 macro_rules! bench_iter {
     ($name:ident, $ctor:expr) => {
@@ -142,10 +117,9 @@ macro_rules! bench_iter {
     }
 }
 
-bench_iter!(bench_iter_btreemap, make_btreemap);
-bench_iter!(bench_iter_hashmap, make_hashmap);
-//bench_iter!(bench_iter_arraymap, make_arraymap);
-bench_iter!(bench_iter_cchashmap, make_cchashmap);
+bench_iter!(bench_btreemap_iter, make_btreemap);
+bench_iter!(bench_hashmap_iter, make_hashmap);
+bench_iter!(bench_cchashmap_iter, make_cchashmap);
 
 macro_rules! bench_get {
     ($name:ident, $ctor:expr) => {
@@ -165,10 +139,9 @@ macro_rules! bench_get {
     }
 }
 
-bench_get!(bench_get_btreemap, make_btreemap);
-bench_get!(bench_get_hashmap, make_hashmap);
-//bench_get!(bench_get_arraymap, make_arraymap);
-bench_get!(bench_get_cchashmap, make_cchashmap);
+bench_get!(bench_btreemap_get, make_btreemap);
+bench_get!(bench_hashmap_get, make_hashmap);
+bench_get!(bench_cchashmap_get, make_cchashmap);
 
 macro_rules! bench_contains_key {
     ($name:ident, $ctor:expr) => {
@@ -188,10 +161,9 @@ macro_rules! bench_contains_key {
     }
 }
 
-bench_contains_key!(bench_contains_key_btreemap, make_btreemap);
-bench_contains_key!(bench_contains_key_hashmap, make_hashmap);
-//bench_contains_key!(bench_contains_key_arraymap, make_arraymap);
-bench_contains_key!(bench_contains_key_cchashmap, make_cchashmap);
+bench_contains_key!(bench_key_btreemap_contains, make_btreemap);
+bench_contains_key!(bench_key_hashmap_contains, make_hashmap);
+bench_contains_key!(bench_key_cchashmap_contains, make_cchashmap);
 
 macro_rules! bench_clone {
     ($name:ident, $ctor:expr) => {
@@ -209,10 +181,9 @@ macro_rules! bench_clone {
     }
 }
 
-bench_clone!(bench_clone_btreemap, make_btreemap);
-bench_clone!(bench_clone_hashmap, make_hashmap);
-//bench_clone!(bench_clone_arraymap, make_arraymap);
-bench_clone!(bench_clone_cchashmap, make_cchashmap);
+bench_clone!(bench_btreemap_clone, make_btreemap);
+bench_clone!(bench_hashmap_clone, make_hashmap);
+bench_clone!(bench_cchashmap_clone, make_cchashmap);
 
 macro_rules! bench_remove {
     ($name:ident, $ctor:expr) => {
@@ -233,7 +204,6 @@ macro_rules! bench_remove {
     }
 }
 
-bench_remove!(bench_remove_btreemap, make_btreemap);
-bench_remove!(bench_remove_hashmap, make_hashmap);
-//bench_remove!(bench_remove_arraymap, make_arraymap);
-bench_remove!(bench_remove_cchashmap, make_cchashmap);
+bench_remove!(bench_btreemap_remove, make_btreemap);
+bench_remove!(bench_hashmap_remove, make_hashmap);
+bench_remove!(bench_cchashmap_remove, make_cchashmap);
