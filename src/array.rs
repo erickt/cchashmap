@@ -6,6 +6,7 @@ use std::mem;
 use std::ops::Index;
 use std::ptr;
 use std::slice;
+use std::u16;
 
 use quickcheck::{self, Arbitrary};
 
@@ -265,14 +266,6 @@ impl<V> ArrayMap<V> {
         value
     }
 
-    unsafe fn get_value_at<'a>(&'a self, index: usize) -> &'a V {
-        mem::transmute(self.buf.as_ptr().offset(index as isize))
-    }
-
-    unsafe fn get_mut_value_at<'a>(&'a mut self, index: usize) -> &'a mut V {
-        mem::transmute(self.buf.as_mut_ptr().offset(index as isize))
-    }
-
     /// Gets the given key's corresponding entry in the map for in-place manipulation.
     ///
     /// # Examples
@@ -379,6 +372,8 @@ impl<V> ArrayMap<V> {
 
     #[inline(never)]
     fn push(&mut self, key: &[u8], value: V) -> &mut V {
+        assert!(key.len() < u16::MAX as usize);
+
         let buf_len = self.buf.len();
 
         // First, make sure we reserve enough space to write everything.
@@ -426,15 +421,13 @@ impl<T> Drop for ArrayMap<T> {
 
 impl<T: Clone> Clone for ArrayMap<T> {
     fn clone(&self) -> Self {
-        unsafe {
-            let mut dst = ArrayMap::with_capacity_raw(self.buf.len());
+        let mut dst = ArrayMap::with_capacity_raw(self.buf.len());
 
-            for (key, value) in self.iter() {
-                dst.push(key, value.clone());
-            }
-
-            dst
+        for (key, value) in self.iter() {
+            dst.push(key, value.clone());
         }
+
+        dst
     }
 }
 
@@ -471,67 +464,7 @@ impl<V> fmt::Debug for ArrayMap<V> where V: fmt::Debug {
     }
 }
 
-struct RawItem<'a, V: 'a> {
-    ptr: *const u8,
-    _marker: PhantomData<&'a V>,
-}
-
-impl<'a, V> RawItem<'a, V> {
-    #[inline(always)]
-    fn new(ptr: *const u8) -> Self {
-        RawItem {
-            ptr: ptr,
-            _marker: PhantomData,
-        }
-    }
-
-    #[inline(always)]
-    fn key_index(&self) -> usize {
-        mem::size_of::<usize>()
-    }
-
-    #[inline(always)]
-    fn value_index(&self) -> usize {
-        self.key_index() + self.key_len()
-    }
-
-    #[inline(always)]
-    fn next_index(&self) -> usize {
-        self.value_index() + mem::size_of::<V>()
-    }
-
-    #[inline(always)]
-    fn key_len(&self) -> usize {
-        unsafe {
-            ptr::read(self.ptr as *const usize)
-        }
-    }
-
-    #[inline(always)]
-    fn key(&self) -> &'a [u8] {
-        unsafe {
-            slice::from_raw_parts(
-                self.ptr.offset(self.key_index() as isize),
-                self.key_len())
-        }
-    }
-
-    #[inline(always)]
-    fn value_ptr(&self) -> *const V {
-        unsafe {
-            self.ptr.offset(self.value_index() as isize) as *const V
-        }
-    }
-
-    #[inline(always)]
-    fn value_ref(&self) -> &'a V {
-        unsafe {
-            mem::transmute(self.value_ptr())
-        }
-    }
-}
-
-unsafe fn raw_item<V>(mut ptr: *const u8) -> (*const u8, usize, *const V, *const u8) {
+unsafe fn raw_item<V>(ptr: *const u8) -> (*const u8, usize, *const V, *const u8) {
     let key_len = ptr::read(ptr as *const usize);
     let key_ptr = ptr.offset(mem::size_of::<usize>() as isize);
     let value_ptr = key_ptr.offset(key_len as isize);
@@ -731,3 +664,43 @@ impl<V> Arbitrary for ArrayMap<V> where V: Arbitrary {
         Box::new(keys.shrink().map(|keys| ArrayMap::from_iter(keys.into_iter())))
     }
 }
+
+
+/*
+/// Rounds up to a multiple of a power of two. Returns the closest multiple
+/// of `target_alignment` that is higher or equal to `unrounded`.
+///
+/// # Panics
+///
+/// Panics if `target_alignment` is not a power of two.
+#[inline]
+fn round_up_to_next(unrounded: usize, target_alignment: usize) -> usize {
+    assert!(target_alignment.is_power_of_two());
+    (unrounded + target_alignment - 1) & !(target_alignment - 1)
+}
+
+#[test]
+fn test_rounding() {
+    assert_eq!(round_up_to_next(0, 4), 0);
+    assert_eq!(round_up_to_next(1, 4), 4);
+    assert_eq!(round_up_to_next(2, 4), 4);
+    assert_eq!(round_up_to_next(3, 4), 4);
+    assert_eq!(round_up_to_next(4, 4), 4);
+    assert_eq!(round_up_to_next(5, 4), 8);
+}
+
+// Returns a tuple of (key_offset, val_offset),
+// from the start of a mallocated array.
+#[inline]
+fn calculate_offsets(len_size: usize,
+                     keys_size: usize, keys_align: usize,
+                     vals_align: usize)
+                     -> (usize, usize, bool) {
+    let keys_offset = round_up_to_next(hashes_size, keys_align);
+    let (end_of_keys, oflo) = keys_offset.overflowing_add(keys_size);
+
+    let vals_offset = round_up_to_next(end_of_keys, vals_align);
+
+    (keys_offset, vals_offset, oflo)
+}
+*/
