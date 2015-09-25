@@ -235,17 +235,34 @@ impl<V> ArrayMap<V> {
                 .find(|&(key_ptr, key_len, _)| key == slice::from_raw_parts(key_ptr, key_len));
 
             match item {
-                Some((key_ptr, key_len, value_ptr)) => Some(self.remove_at(key_ptr, key_len, value_ptr)),
+                Some((key_ptr, key_len, val_ptr)) => {
+                    assert!(key_ptr <= val_ptr);
+                    Some(self.remove_at(key_ptr, key_len, val_ptr))
+                }
                 None => None,
             }
         }
     }
 
-    unsafe fn remove_at(&mut self, key_ptr: *const u8, key_len: usize, value_ptr: *const V) -> V {
+    unsafe fn remove_at(&mut self, key_ptr: *const u8, key_len: usize, val_ptr: *const u8) -> V {
         let buf_ptr = self.buf.as_ptr();
         let end_ptr = buf_ptr.offset(self.buf.len() as isize);
 
-        let next_ptr = (value_ptr as *const u8).offset(mem::size_of::<V>() as isize);
+        let len_ptr = key_ptr.offset(-(mem::size_of::<usize>() as isize));
+        assert!(buf_ptr <= len_ptr && len_ptr < end_ptr);
+
+        let len_index = (len_ptr as usize) - (buf_ptr as usize);
+        let key_index = (key_ptr as usize) - (buf_ptr as usize);
+        let val_index = (val_ptr as usize) - (buf_ptr as usize);
+
+        assert!(end_ptr <= buf_ptr.offset(self.buf.capacity() as isize));
+
+        assert!(len_ptr <  key_ptr && key_ptr < end_ptr);
+        assert!(key_ptr <= val_ptr);
+        assert!(val_ptr <  end_ptr);
+        assert!(val_ptr.offset(mem::size_of::<usize>() as isize) <= end_ptr);
+
+        let next_ptr = val_ptr.offset(mem::size_of::<V>() as isize);
         let remaining_bytes = (end_ptr as usize) - (next_ptr as usize);
 
         // Truncate the buffer so we don't drop the value twice if there's a panic.
@@ -253,15 +270,21 @@ impl<V> ArrayMap<V> {
         let item_index = (item_ptr as usize) - (buf_ptr as usize);
 
         self.buf.set_len(item_index);
+        assert!(end_ptr <= buf_ptr.offset(self.buf.capacity() as isize));
 
         // Read out the value. We now own it since the buffer was truncated.
-        let value: V = ptr::read(value_ptr);
+        let value: V = ptr::read(val_ptr as *const V);
 
         // Move the remaining items into this item's spot.
-        ptr::copy(next_ptr, value_ptr as *mut u8, remaining_bytes);
+        assert!(next_ptr.offset(remaining_bytes as isize) <= end_ptr);
+
+        ptr::copy(next_ptr, item_ptr as *mut u8, remaining_bytes);
 
         // Finally, restore the length, minus the item we removed.
         self.buf.set_len(item_index + remaining_bytes);
+        assert!(self.buf.len() < self.buf.capacity());
+
+        for _ in self.iter_raw() {}
 
         value
     }
@@ -291,12 +314,12 @@ impl<V> ArrayMap<V> {
                 .find(|&(key_ptr, key_len, _)| key == slice::from_raw_parts(key_ptr, key_len));
 
             match item {
-                Some((key_ptr, key_len, value_ptr)) => {
+                Some((key_ptr, key_len, val_ptr)) => {
                     Entry::Occupied(OccupiedEntry {
                         array: self,
                         key_ptr: key_ptr,
                         key_len: key_len,
-                        value_ptr: value_ptr,
+                        val_ptr: val_ptr,
                         _marker: PhantomData,
                     })
                 }
@@ -464,13 +487,20 @@ impl<V> fmt::Debug for ArrayMap<V> where V: fmt::Debug {
     }
 }
 
-unsafe fn raw_item<V>(ptr: *const u8) -> (*const u8, usize, *const V, *const u8) {
-    let key_len = ptr::read(ptr as *const usize);
-    let key_ptr = ptr.offset(mem::size_of::<usize>() as isize);
-    let value_ptr = key_ptr.offset(key_len as isize);
-    let next_ptr = value_ptr.offset(mem::size_of::<V>() as isize);
+unsafe fn raw_item<V>(ptr: *const u8) -> (*const u8, usize, *const u8, *const u8) {
+    let len_ptr = ptr;
 
-    (key_ptr, key_len, value_ptr as *const V, next_ptr)
+    let key_len = ptr::read(len_ptr as *const usize);
+
+    let key_ptr = len_ptr.offset(mem::size_of::<usize>() as isize);
+    assert!(len_ptr < key_ptr);
+
+    let val_ptr = key_ptr.offset(key_len as isize);
+    assert!(key_ptr <= val_ptr);
+
+    let next_ptr = val_ptr.offset(mem::size_of::<V>() as isize);
+
+    (key_ptr, key_len, val_ptr, next_ptr)
 }
 
 
@@ -481,18 +511,28 @@ struct IterRaw<V> {
 }
 
 impl<V> Iterator for IterRaw<V> {
-    type Item = (*const u8, usize, *const V);
+    type Item = (*const u8, usize, *const u8);
 
     #[inline(always)]
-    fn next(&mut self) -> Option<(*const u8, usize, *const V)> {
+    fn next(&mut self) -> Option<(*const u8, usize, *const u8)> {
         if self.ptr == self.end {
             None
         } else {
             unsafe {
-                let (key_ptr, key_len, value_ptr, next_ptr) = raw_item(self.ptr);
+                let (key_ptr, key_len, val_ptr, next_ptr) = raw_item::<V>(self.ptr);
+                assert!(key_ptr <= val_ptr);
+                assert!(val_ptr < next_ptr);
+
+                assert!(key_ptr <= self.end);
+                assert!(val_ptr <= self.end);
+                assert!(next_ptr <= self.end);
+
+                assert!(key_ptr.offset(key_len as isize) == val_ptr);
+                assert!(key_ptr.offset(key_len as isize) <= self.end);
+
                 self.ptr = next_ptr;
 
-                Some((key_ptr, key_len, value_ptr))
+                Some((key_ptr, key_len, val_ptr))
             }
         }
     }
@@ -509,7 +549,7 @@ macro_rules! iterator {
                         self.len -= 1;
                         unsafe {
                             let key = slice::from_raw_parts(key_ptr, len);
-                            let value = $read(value_ptr);
+                            let value = $read(value_ptr as *const V);
                             Some((key, value))
                         }
                     }
@@ -581,7 +621,7 @@ pub struct OccupiedEntry<'a, V: 'a> {
     array: &'a mut ArrayMap<V>,
     key_ptr: *const u8,
     key_len: usize,
-    value_ptr: *const V,
+    val_ptr: *const u8,
     _marker: PhantomData<&'a V>,
 }
 
@@ -609,14 +649,14 @@ impl<'a, V> OccupiedEntry<'a, V> {
     /// Gets a reference to the value in the entry.
     pub fn get(&self) -> &V {
         unsafe {
-            mem::transmute(self.value_ptr)
+            mem::transmute(self.val_ptr as *const V)
         }
     }
 
     /// Gets a mutable reference to the value in the entry.
     pub fn get_mut(&mut self) -> &mut V {
         unsafe {
-            mem::transmute(self.value_ptr)
+            mem::transmute(self.val_ptr as *mut V)
         }
     }
 
@@ -624,7 +664,7 @@ impl<'a, V> OccupiedEntry<'a, V> {
     /// with a lifetime bound to the map itself
     pub fn into_mut(self) -> &'a mut V {
         unsafe {
-            mem::transmute(self.value_ptr)
+            mem::transmute(self.val_ptr as *mut V)
         }
     }
 
@@ -638,7 +678,7 @@ impl<'a, V> OccupiedEntry<'a, V> {
     /// Takes the value out of the entry, and returns it
     pub fn remove(self) -> V {
         unsafe {
-            self.array.remove_at(self.key_ptr, self.key_len, self.value_ptr)
+            self.array.remove_at(self.key_ptr, self.key_len, self.val_ptr)
         }
     }
 }
