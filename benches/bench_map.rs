@@ -161,9 +161,9 @@ macro_rules! bench_contains_key {
     }
 }
 
-bench_contains_key!(bench_key_btreemap_contains, make_btreemap);
-bench_contains_key!(bench_key_hashmap_contains, make_hashmap);
-bench_contains_key!(bench_key_cchashmap_contains, make_cchashmap);
+bench_contains_key!(bench_btreemap_contains_key, make_btreemap);
+bench_contains_key!(bench_hashmap_contains_key, make_hashmap);
+bench_contains_key!(bench_cchashmap_contains_key, make_cchashmap);
 
 macro_rules! bench_clone {
     ($name:ident, $ctor:expr) => {
