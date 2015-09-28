@@ -52,11 +52,11 @@ impl<V> ArrayMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::BTreeSet;
+    /// use cchashmap::array::ArrayMap;
     ///
-    /// let mut v = BTreeSet::new();
+    /// let mut v = ArrayMap::new();
     /// assert_eq!(v.len(), 0);
-    /// v.insert(1);
+    /// v.insert(b"1", 2);
     /// assert_eq!(v.len(), 1);
     /// ```
     pub fn len(&self) -> usize {
@@ -68,11 +68,11 @@ impl<V> ArrayMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::BTreeSet;
+    /// use cchashmap::array::ArrayMap;
     ///
-    /// let mut v = BTreeSet::new();
+    /// let mut v = ArrayMap::new();
     /// assert!(v.is_empty());
-    /// v.insert(1);
+    /// v.insert(b"1", 2);
     /// assert!(!v.is_empty());
     /// ```
     pub fn is_empty(&self) -> bool {
@@ -84,10 +84,10 @@ impl<V> ArrayMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::BTreeSet;
+    /// use cchashmap::array::ArrayMap;
     ///
-    /// let mut v = BTreeSet::new();
-    /// v.insert(1);
+    /// let mut v = ArrayMap::new();
+    /// v.insert(b"1", 2);
     /// v.clear();
     /// assert!(v.is_empty());
     /// ```
@@ -107,12 +107,12 @@ impl<V> ArrayMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::HashMap;
+    /// use cchashmap::array::ArrayMap;
     ///
-    /// let mut map = HashMap::new();
-    /// map.insert(1, "a");
-    /// assert_eq!(map.get(&1), Some(&"a"));
-    /// assert_eq!(map.get(&2), None);
+    /// let mut map = ArrayMap::new();
+    /// map.insert(b"1", "a");
+    /// assert_eq!(map.get(&b"1"[..]), Some(&"a"));
+    /// assert_eq!(map.get(&b"2"[..]), None);
     /// ```
     #[inline]
     pub fn get<K>(&self, key: K) -> Option<&V>
@@ -140,12 +140,12 @@ impl<V> ArrayMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::HashMap;
+    /// use cchashmap::array::ArrayMap;
     ///
-    /// let mut map = HashMap::new();
-    /// map.insert(1, "a");
-    /// assert_eq!(map.contains_key(&1), true);
-    /// assert_eq!(map.contains_key(&2), false);
+    /// let mut map = ArrayMap::new();
+    /// map.insert(b"1", "a");
+    /// assert_eq!(map.contains_key(&b"1"[..]), true);
+    /// assert_eq!(map.contains_key(&b"2"[..]), false);
     /// ```
     pub fn contains_key<K>(&self, key: K) -> bool
         where K: Borrow<[u8]>
@@ -162,14 +162,14 @@ impl<V> ArrayMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::HashMap;
+    /// use cchashmap::array::ArrayMap;
     ///
-    /// let mut map = HashMap::new();
-    /// map.insert(1, "a");
-    /// if let Some(x) = map.get_mut(&1) {
+    /// let mut map = ArrayMap::new();
+    /// map.insert(b"1", "a");
+    /// if let Some(x) = map.get_mut(&b"1"[..]) {
     ///     *x = "b";
     /// }
-    /// assert_eq!(map[&1], "b");
+    /// assert_eq!(map.get(&b"1"[..]), Some(&"b"));
     /// ```
     pub fn get_mut<K>(&mut self, key: K) -> Option<&mut V>
         where K: Borrow<[u8]>
@@ -184,15 +184,15 @@ impl<V> ArrayMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::HashMap;
+    /// use cchashmap::array::ArrayMap;
     ///
-    /// let mut map = HashMap::new();
-    /// assert_eq!(map.insert(37, "a"), None);
+    /// let mut map = ArrayMap::new();
+    /// assert_eq!(map.insert(b"37", "a"), None);
     /// assert_eq!(map.is_empty(), false);
     ///
-    /// map.insert(37, "b");
-    /// assert_eq!(map.insert(37, "c"), Some("b"));
-    /// assert_eq!(map[&37], "c");
+    /// map.insert(b"37", "b");
+    /// assert_eq!(map.insert(b"37", "c"), Some("b"));
+    /// assert_eq!(map.get(&b"37"[..]), Some(&"c"));
     /// ```
     #[inline(never)]
     pub fn insert(&mut self, key: &[u8], mut value: V) -> Option<V> {
@@ -218,12 +218,12 @@ impl<V> ArrayMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::HashMap;
+    /// use cchashmap::array::ArrayMap;
     ///
-    /// let mut map = HashMap::new();
-    /// map.insert(1, "a");
-    /// assert_eq!(map.remove(&1), Some("a"));
-    /// assert_eq!(map.remove(&1), None);
+    /// let mut map = ArrayMap::new();
+    /// map.insert(b"1", "a");
+    /// assert_eq!(map.remove(&b"1"[..]), Some("a"));
+    /// assert_eq!(map.remove(&b"1"[..]), None);
     /// ```
     pub fn remove(&mut self, key: &[u8]) -> Option<V> {
         if self.is_empty() {
@@ -294,19 +294,19 @@ impl<V> ArrayMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::HashMap;
+    /// use cchashmap::array::ArrayMap;
     ///
-    /// let mut letters = HashMap::new();
+    /// let mut letters = ArrayMap::new();
     ///
     /// for ch in "a short treatise on fungi".chars() {
-    ///     let counter = letters.entry(ch).or_insert(0);
+    ///     let counter = letters.entry(ch.to_string().as_bytes()).or_insert(0);
     ///     *counter += 1;
     /// }
     ///
-    /// assert_eq!(letters[&'s'], 2);
-    /// assert_eq!(letters[&'t'], 3);
-    /// assert_eq!(letters[&'u'], 1);
-    /// assert_eq!(letters.get(&'y'), None);
+    /// assert_eq!(letters[&*b"s"], 2);
+    /// assert_eq!(letters[&*b"t"], 3);
+    /// assert_eq!(letters[&*b"u"], 1);
+    /// assert_eq!(letters.get(&b"y"[..]), None);
     /// ```
     pub fn entry<'a, 'b>(&'a mut self, key: &'b [u8]) -> Entry<'a, 'b, V> {
         unsafe {
@@ -521,7 +521,7 @@ impl<V> Iterator for IterRaw<V> {
             unsafe {
                 let (key_ptr, key_len, val_ptr, next_ptr) = raw_item::<V>(self.ptr);
                 assert!(key_ptr <= val_ptr);
-                assert!(val_ptr < next_ptr);
+                assert!(val_ptr <= next_ptr);
 
                 assert!(key_ptr <= self.end);
                 assert!(val_ptr <= self.end);

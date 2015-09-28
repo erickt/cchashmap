@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 use std::fmt;
 use std::hash::{Hash, Hasher, SipHasher};
 use std::iter::{self, FromIterator};
+use std::ops::Index;
 use std::slice;
 
 use array::{self, ArrayMap};
@@ -35,11 +36,11 @@ impl<V> CCHashMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::BTreeSet;
+    /// use cchashmap::CCHashMap;
     ///
-    /// let mut v = BTreeSet::new();
+    /// let mut v = CCHashMap::new();
     /// assert_eq!(v.len(), 0);
-    /// v.insert(1);
+    /// v.insert(&b"1"[..], 1);
     /// assert_eq!(v.len(), 1);
     /// ```
     pub fn len(&self) -> usize {
@@ -51,11 +52,11 @@ impl<V> CCHashMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::BTreeSet;
+    /// use cchashmap::CCHashMap;
     ///
-    /// let mut v = BTreeSet::new();
+    /// let mut v = CCHashMap::new();
     /// assert!(v.is_empty());
-    /// v.insert(1);
+    /// v.insert(&b"1"[..], 1);
     /// assert!(!v.is_empty());
     /// ```
     pub fn is_empty(&self) -> bool {
@@ -67,10 +68,10 @@ impl<V> CCHashMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::BTreeSet;
+    /// use cchashmap::CCHashMap;
     ///
-    /// let mut v = BTreeSet::new();
-    /// v.insert(1);
+    /// let mut v = CCHashMap::new();
+    /// v.insert(&b"1"[..], 1);
     /// v.clear();
     /// assert!(v.is_empty());
     /// ```
@@ -78,6 +79,7 @@ impl<V> CCHashMap<V> {
         for bucket in self.buckets.iter_mut() {
             bucket.clear();
         }
+        self.len = 0;
     }
 
     pub fn contains_key<K>(&self, key: K) -> bool
@@ -96,12 +98,12 @@ impl<V> CCHashMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::HashMap;
+    /// use cchashmap::CCHashMap;
     ///
-    /// let mut map = HashMap::new();
-    /// map.insert(1, "a");
-    /// assert_eq!(map.get(&1), Some(&"a"));
-    /// assert_eq!(map.get(&2), None);
+    /// let mut map = CCHashMap::new();
+    /// map.insert(&b"1"[..], "a");
+    /// assert_eq!(map.get(&b"1"[..]), Some(&"a"));
+    /// assert_eq!(map.get(&b"2"[..]), None);
     /// ```
     pub fn get<K>(&self, key: K) -> Option<&V>
         where K: Borrow<[u8]>
@@ -118,14 +120,14 @@ impl<V> CCHashMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::BTreeMap;
+    /// use cchashmap::CCHashMap;
     ///
-    /// let mut map = BTreeMap::new();
-    /// map.insert(1, "a");
-    /// if let Some(x) = map.get_mut(&1) {
+    /// let mut map = CCHashMap::new();
+    /// map.insert(&b"1"[..], "a");
+    /// if let Some(x) = map.get_mut(&b"1"[..]) {
     ///     *x = "b";
     /// }
-    /// assert_eq!(map[&1], "b");
+    /// assert_eq!(map.get(&b"1"[..]), Some(&"b"));
     /// ```
     pub fn get_mut<K>(&mut self, key: K) -> Option<&mut V>
         where K: Borrow<[u8]>
@@ -140,15 +142,15 @@ impl<V> CCHashMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::BTreeMap;
+    /// use cchashmap::CCHashMap;
     ///
-    /// let mut map = BTreeMap::new();
-    /// assert_eq!(map.insert(37, "a"), None);
+    /// let mut map = CCHashMap::new();
+    /// assert_eq!(map.insert(&b"37"[..], "a"), None);
     /// assert_eq!(map.is_empty(), false);
     ///
-    /// map.insert(37, "b");
-    /// assert_eq!(map.insert(37, "c"), Some("b"));
-    /// assert_eq!(map[&37], "c");
+    /// map.insert(&b"37"[..], "b");
+    /// assert_eq!(map.insert(&b"37"[..], "c"), Some("b"));
+    /// assert_eq!(map.get(&b"37"[..]), Some(&"c"));
     /// ```
     pub fn insert<T>(&mut self, key: T, value: V) -> Option<V>
         where T: Borrow<[u8]>
@@ -172,12 +174,12 @@ impl<V> CCHashMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::BTreeMap;
+    /// use cchashmap::CCHashMap;
     ///
-    /// let mut map = BTreeMap::new();
-    /// map.insert(1, "a");
-    /// assert_eq!(map.remove(&1), Some("a"));
-    /// assert_eq!(map.remove(&1), None);
+    /// let mut map = CCHashMap::new();
+    /// map.insert(&b"1"[..], "a");
+    /// assert_eq!(map.remove(&b"1"[..]), Some("a"));
+    /// assert_eq!(map.remove(&b"1"[..]), None);
     /// ```
     pub fn remove<K>(&mut self, key: K) -> Option<V>
         where K: Borrow<[u8]>
@@ -199,14 +201,14 @@ impl<V> CCHashMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::BTreeMap;
+    /// use cchashmap::CCHashMap;
     ///
-    /// let mut a = BTreeMap::new();
-    /// a.insert(1, "a");
-    /// a.insert(2, "b");
+    /// let mut a = CCHashMap::new();
+    /// a.insert(&b"1"[..], "a");
+    /// a.insert(&b"2"[..], "b");
     ///
-    /// let keys: Vec<_> = a.keys().cloned().collect();
-    /// assert_eq!(keys, [1, 2]);
+    /// let keys: Vec<_> = a.keys().collect();
+    /// assert_eq!(keys, [&b"1"[..], &b"2"[..]]);
     /// ```
     pub fn keys<'a>(&'a self) -> Keys<'a, V> {
         fn first<A, B>((a, _): (A, B)) -> A { a }
@@ -220,13 +222,13 @@ impl<V> CCHashMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::BTreeMap;
+    /// use cchashmap::CCHashMap;
     ///
-    /// let mut a = BTreeMap::new();
-    /// a.insert(1, "a");
-    /// a.insert(2, "b");
+    /// let mut a = CCHashMap::new();
+    /// a.insert(&b"1"[..], "a");
+    /// a.insert(&b"2"[..], "b");
     ///
-    /// let values: Vec<&str> = a.values().cloned().collect();
+    /// let values: Vec<&str> = a.values().map(|v| *v).collect();
     /// assert_eq!(values, ["a", "b"]);
     /// ```
     pub fn values<'a>(&'a self) -> Values<'a, V> {
@@ -251,19 +253,19 @@ impl<V> CCHashMap<V> {
     /// # Examples
     ///
     /// ```
-    /// use std::collections::HashMap;
+    /// use cchashmap::CCHashMap;
     ///
-    /// let mut letters = HashMap::new();
+    /// let mut letters = CCHashMap::new();
     ///
     /// for ch in "a short treatise on fungi".chars() {
-    ///     let counter = letters.entry(ch).or_insert(0);
+    ///     let counter = letters.entry(ch.to_string().as_bytes()).or_insert(0);
     ///     *counter += 1;
     /// }
     ///
-    /// assert_eq!(letters[&'s'], 2);
-    /// assert_eq!(letters[&'t'], 3);
-    /// assert_eq!(letters[&'u'], 1);
-    /// assert_eq!(letters.get(&'y'), None);
+    /// assert_eq!(letters[&*b"s"], 2);
+    /// assert_eq!(letters[&*b"t"], 3);
+    /// assert_eq!(letters[&*b"u"], 1);
+    /// assert_eq!(letters.get(&b"y"[..]), None);
     /// ```
     pub fn entry<'a, 'b>(&'a mut self, key: &'b [u8]) -> Entry<'a, 'b, V> {
         let index = self.get_bucket_index(key);
@@ -301,6 +303,17 @@ impl<V> CCHashMap<V> {
     fn get_bucket_mut(&mut self, key: &[u8]) -> &mut ArrayMap<V> {
         let index = self.get_bucket_index(key);
         &mut self.buckets[index]
+    }
+}
+
+impl<'a, K, V> Index<&'a K> for CCHashMap<V>
+    where K: Borrow<[u8]>
+{
+    type Output = V;
+
+    #[inline]
+    fn index(&self, key: &K) -> &V {
+        self.get(key.borrow()).expect("no entry found for key")
     }
 }
 
