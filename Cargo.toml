@@ -8,5 +8,7 @@ unstable = ["compiletest_rs"]
 
 [dependencies]
 byteorder = "*"
-quickcheck = "*"
 compiletest_rs = { version = "*", optional = true }
+libc = "*"
+quickcheck = "*"
+time = "*"
