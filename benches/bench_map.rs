@@ -12,8 +12,8 @@ use std::io::{BufReader, BufRead};
 use cchashmap::CCHashMap;
 
 fn make_fixture() -> (Vec<String>) {
-    let filename= env::var("FIXTURE").unwrap();
-    let file = fs::File::open(filename).unwrap();
+    let filename= env::var("FIXTURE").expect("FIXTURE environment variable not set");
+    let file = fs::File::open(filename).expect("FIXTURE file does not exist");
 
     let mut words = Vec::new();
     for line in BufReader::new(file).lines() {
@@ -196,8 +196,7 @@ macro_rules! bench_remove {
             b.iter(|| {
                 let mut haystack = haystack.clone();
                 for key in fixture.iter() {
-                    let key: &[u8] = key.as_bytes();
-                    test::black_box(haystack.remove(key));
+                    test::black_box(haystack.remove(key.as_bytes()));
                 }
             })
         }
@@ -207,4 +206,4 @@ macro_rules! bench_remove {
 
 bench_remove!(bench_btreemap_remove, make_btreemap);
 bench_remove!(bench_hashmap_remove, make_hashmap);
-//bench_remove!(bench_cchashmap_remove, make_cchashmap);
+bench_remove!(bench_cchashmap_remove, make_cchashmap);
