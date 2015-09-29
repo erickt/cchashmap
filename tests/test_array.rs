@@ -5,14 +5,26 @@ extern crate quickcheck;
 extern crate test;
 
 use std::collections::BTreeMap;
-use std::iter::FromIterator;
 
 use cchashmap::array::ArrayMap;
+use cchashmap::util;
+
+fn insert<V>(array: &mut ArrayMap<V>, key: &[u8], value: V) -> Option<V> {
+    let hash = util::hash(key);
+    array.insert(hash, key, value)
+}
+
+fn get<'a, V>(array: &'a ArrayMap<V>, key: &[u8]) -> Option<&'a V> {
+    let hash = util::hash(key);
+    array.get(hash, key)
+}
 
 #[test]
 fn quickcheck_from_iter_and_iter() {
     fn prop(map: BTreeMap<Vec<u8>, u32>) -> bool {
-        let array = ArrayMap::from_iter(map.iter().map(|(k, v)| (&**k, *v)));
+        let array = map.iter()
+            .map(|(k, v)| (util::hash(&k), &**k, *v))
+            .collect::<ArrayMap<_>>();
 
         if map.len() != array.len() {
             return false;
@@ -31,7 +43,7 @@ fn quickcheck_from_iter_and_iter() {
 
             // Make sure every key is in the array.
             match array_iter.next() {
-                Some((k, v)) if &**key == k && value == v => { }
+                Some((h, k, v)) if util::hash(&key) == h && &**key == k && value == v => { }
                 _ => { return false; }
             }
         }
@@ -48,11 +60,11 @@ fn quickcheck_insert_and_get() {
         let mut array = ArrayMap::new();
 
         for (key, value) in map.iter() {
-            array.insert(&**key, *value);
+            insert(&mut array, &**key, *value);
         }
 
         for (key, value) in map.iter() {
-            if array.get(&**key) != Some(value) {
+            if get(&array, &**key) != Some(value) {
                 return false;
             }
         }
@@ -63,7 +75,7 @@ fn quickcheck_insert_and_get() {
             missing_key.push(0);
         }
 
-        array.get(missing_key).is_none()
+        get(&array, &missing_key).is_none()
     }
 
     quickcheck::quickcheck(prop as fn(BTreeMap<Vec<u8>, u32>) -> bool);
@@ -88,14 +100,14 @@ fn test_drain_empty() {
 #[test]
 fn test_drain_one() {
     let mut array = ArrayMap::<u32>::new();
-    array.insert([], 0);
+    insert(&mut array, &[], 0);
 
     assert_eq!(array.len(), 1);
     assert!(!array.is_empty());
 
     {
         let mut iter = array.drain();
-        assert_eq!(iter.next(), Some((&[][..], 0)));
+        assert_eq!(iter.next(), Some((util::hash(&[]), &[][..], 0)));
         assert_eq!(iter.next(), None);
     }
 
@@ -106,14 +118,16 @@ fn test_drain_one() {
 #[test]
 fn quickcheck_drain() {
     fn prop(map: BTreeMap<Vec<u8>, u32>) -> bool {
-        let mut array = ArrayMap::from_iter(map.iter().map(|(k, v)| (&**k, *v)));
+        let mut array = map.iter()
+            .map(|(k, v)| (util::hash(&k), &**k, *v))
+            .collect::<ArrayMap<_>>();
 
         if map.len() != array.len() || map.is_empty() != array.is_empty() {
             return false;
         }
 
-        for ((k1, v1), (k2, v2)) in map.iter().zip(array.drain()) {
-            if &**k1 != k2 || v1 != &v2 {
+        for ((k1, v1), (h2, k2, v2)) in map.iter().zip(array.drain()) {
+            if util::hash(&k1) != h2 || &**k1 != k2 || v1 != &v2 {
                 return false;
             }
         }
@@ -139,8 +153,8 @@ fn test_drop_works() {
     let (mut count_x, mut count_y) = (0, 0);
     {
         let mut array = ArrayMap::new();
-        array.insert(*b"a", DropCounter { count: &mut count_x });
-        array.insert(*b"b", DropCounter { count: &mut count_y });
+        insert(&mut array, b"a", DropCounter { count: &mut count_x });
+        insert(&mut array, b"b", DropCounter { count: &mut count_y });
         drop(array);
     };
     assert_eq!(count_x, 1);
@@ -158,9 +172,9 @@ fn test_drain_drops() {
     }
 
     let mut array = ArrayMap::new();
-    array.insert(*b"a", Elem(1));
-    array.insert(*b"b", Elem(2));
-    array.insert(*b"c", Elem(3));
+    insert(&mut array, b"a", Elem(1));
+    insert(&mut array, b"b", Elem(2));
+    insert(&mut array, b"c", Elem(3));
 
     assert_eq!(unsafe { drops }, 0);
 
@@ -187,10 +201,10 @@ fn test_drain_fail() {
     }
 
     let mut array = ArrayMap::new();
-    array.insert(*b"a", BadElem(1));
-    array.insert(*b"b", BadElem(2));
-    array.insert(*b"c", BadElem(0xbadbeef));
-    array.insert(*b"d", BadElem(3));
+    insert(&mut array, b"a", BadElem(1));
+    insert(&mut array, b"b", BadElem(2));
+    insert(&mut array, b"c", BadElem(0xbadbeef));
+    insert(&mut array, b"d", BadElem(3));
 
     array.drain();
 }

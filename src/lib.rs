@@ -3,7 +3,9 @@ extern crate quickcheck;
 
 pub mod array;
 pub mod map;
-pub mod set;
+pub mod util;
+
+//pub mod set;
 
 pub use map::CCHashMap;
-pub use set::CCHashSet;
+//pub use set::CCHashSet;

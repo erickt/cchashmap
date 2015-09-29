@@ -1,14 +1,15 @@
 use std::borrow::Borrow;
 use std::convert::AsRef;
 use std::fmt;
-use std::hash::{Hash, Hasher, SipHasher};
+use std::hash::{Hash, Hasher};
 use std::iter::{self, FromIterator};
 use std::ops::Index;
 use std::slice;
 
-use array::{self, ArrayMap};
-
 use quickcheck;
+
+use array::{self, ArrayMap};
+use util;
 
 static DEFAULT_CAPACITY: usize = 4096;
 
@@ -102,7 +103,8 @@ impl<V> CCHashMap<V> {
     pub fn contains_key<K>(&self, key: K) -> bool
         where K: Borrow<[u8]>
     {
-        self.get_bucket(key.borrow()).contains_key(key)
+        let hash = util::hash(key.borrow());
+        self.get_bucket(hash).contains_key(hash, key)
     }
 
     /// Returns a reference to the value corresponding to the key.
@@ -124,7 +126,8 @@ impl<V> CCHashMap<V> {
     pub fn get<K>(&self, key: K) -> Option<&V>
         where K: Borrow<[u8]>
     {
-        self.get_bucket(key.borrow()).get(key)
+        let hash = util::hash(key.borrow());
+        self.get_bucket(hash).get(hash, key)
     }
 
     /// Returns a mutable reference to the value corresponding to the key.
@@ -147,7 +150,8 @@ impl<V> CCHashMap<V> {
     pub fn get_mut<K>(&mut self, key: K) -> Option<&mut V>
         where K: Borrow<[u8]>
     {
-        self.get_bucket_mut(key.borrow()).get_mut(key)
+        let hash = util::hash(key.borrow());
+        self.get_bucket_mut(hash).get_mut(hash, key)
     }
 
     /// Inserts a key-value pair into the map. If the key already had a value
@@ -170,7 +174,8 @@ impl<V> CCHashMap<V> {
         where T: Borrow<[u8]>
     {
         let key = key.borrow();
-        let old_value = self.get_bucket_mut(key).insert(key, value);
+        let hash = util::hash(key);
+        let old_value = self.get_bucket_mut(hash).insert(hash, key, value);
 
         if old_value.is_none() {
             self.len += 1;
@@ -198,7 +203,8 @@ impl<V> CCHashMap<V> {
     pub fn remove<K>(&mut self, key: K) -> Option<V>
         where K: Borrow<[u8]>
     {
-        self.get_bucket_mut(key.borrow()).remove(key)
+        let hash = util::hash(key.borrow());
+        self.get_bucket_mut(hash).remove(hash, key)
     }
 
     pub fn iter<'a>(&'a self) -> Iter<'a, V> {
@@ -209,6 +215,7 @@ impl<V> CCHashMap<V> {
         }
     }
 
+    /*
     /// Gets an iterator over the keys of the map.
     ///
     /// # Examples
@@ -302,28 +309,20 @@ impl<V> CCHashMap<V> {
             }
         }
     }
+    */
 
-    fn get_bucket_index<K>(&self, key: K) -> usize
-        where K: Borrow<[u8]>
+    fn get_bucket_index(&self, hash: u64) -> usize
     {
-        let mut hasher = SipHasher::new();
-        key.borrow().hash(&mut hasher);
-        let hash = hasher.finish() as usize;
-
-        hash % self.buckets.len()
+        (hash as usize) % self.buckets.len()
     }
 
-    fn get_bucket<K>(&self, key: K) -> &ArrayMap<V>
-        where K: Borrow<[u8]>
-    {
-        let index = self.get_bucket_index(key);
+    fn get_bucket(&self, hash: u64) -> &ArrayMap<V> {
+        let index = self.get_bucket_index(hash);
         &self.buckets[index]
     }
 
-    fn get_bucket_mut<K>(&mut self, key: K) -> &mut ArrayMap<V>
-        where K: Borrow<[u8]>
-    {
-        let index = self.get_bucket_index(key);
+    fn get_bucket_mut(&mut self, hash: u64) -> &mut ArrayMap<V> {
+        let index = self.get_bucket_index(hash);
         &mut self.buckets[index]
     }
 }
@@ -348,14 +347,14 @@ pub struct Iter<'a, V: 'a> {
 impl<'a, V> Iterator for Iter<'a, V> {
     type Item = (&'a [u8], &'a V);
 
-    fn next(&mut self) -> Option<(&'a [u8], &'a V)> {
+    fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.array_iter {
                 Some(ref mut iter) => {
                     match iter.next() {
-                        Some(key) => {
+                        Some((_, key, value)) => {
                             self.len -= 1;
-                            return Some(key);
+                            return Some((key, value));
                         }
                         None => { }
                     }
@@ -408,14 +407,14 @@ pub struct Drain<'a, V: 'a> {
 impl<'a, V> Iterator for Drain<'a, V> {
     type Item = (&'a [u8], V);
 
-    fn next(&mut self) -> Option<(&'a [u8], V)> {
+    fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.array_iter {
                 Some(ref mut iter) => {
                     match iter.next() {
-                        Some(key) => {
+                        Some((_, key, value)) => {
                             *self.len = *self.len - 1;
-                            return Some(key);
+                            return Some((key, value));
                         }
                         None => { }
                     }

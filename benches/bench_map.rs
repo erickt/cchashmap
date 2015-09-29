@@ -64,8 +64,20 @@ fn make_cchashmap(fixture: &[String]) -> CCHashMap<usize> {
     let mut map = CCHashMap::with_capacity(4096);
 
     for key in fixture.iter() {
-        let count = map.entry(key.as_bytes()).or_insert(0);
-        *count = *count + 1;
+        //let count = map.entry(key.as_bytes()).or_insert(0);
+        //*count = *count + 1;
+        //
+        let inserted = match map.get_mut(key.as_bytes()) {
+            Some(count) => {
+                *count = *count + 1;
+                true
+            }
+            None => false,
+        };
+
+        if !inserted {
+            map.insert(key.as_bytes(), 0);
+        }
     }
     map
 }
@@ -126,12 +138,17 @@ macro_rules! bench_get {
         #[bench]
         fn $name(b: &mut test::Bencher) {
             let fixture = make_fixture();
+            let fixture_map = make_hashmap(&fixture);
             b.bytes = fixture.iter().fold(0, |sum, word| sum + word.len() as u64);
             let haystack = $ctor(&fixture);
 
             b.iter(|| {
                 for key in fixture.iter() {
-                    test::black_box(haystack.get(key.as_bytes()));
+                    let fixture_value = fixture_map.get(key.as_bytes());
+                    let haystack_value = haystack.get(key.as_bytes());
+                    assert_eq!(fixture_value, haystack_value);
+
+                    test::black_box(haystack_value);
                 }
             })
         }

@@ -1,15 +1,15 @@
 use std::borrow::Borrow;
-use std::convert::AsRef;
 use std::fmt;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::mem;
-use std::ops::Index;
 use std::ptr;
 use std::slice;
 use std::u16;
 
 use quickcheck::{self, Arbitrary};
+
+use util;
 
 pub struct ArrayMap<V> {
     buf: Vec<u8>,
@@ -49,49 +49,49 @@ impl<V> ArrayMap<V> {
     }
 
     /// Returns the number of elements in the set.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use cchashmap::array::ArrayMap;
-    ///
-    /// let mut v = ArrayMap::new();
-    /// assert_eq!(v.len(), 0);
-    /// v.insert(*b"1", 2);
-    /// assert_eq!(v.len(), 1);
-    /// ```
+    //
+    // # Examples
+    //
+    // ```
+    // use cchashmap::array::ArrayMap;
+    //
+    // let mut v = ArrayMap::new();
+    // assert_eq!(v.len(), 0);
+    // v.insert(*b"1", 2);
+    // assert_eq!(v.len(), 1);
+    // ```
     pub fn len(&self) -> usize {
         self.len
     }
 
     /// Returns true if the set contains no elements.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use cchashmap::array::ArrayMap;
-    ///
-    /// let mut v = ArrayMap::new();
-    /// assert!(v.is_empty());
-    /// v.insert(*b"1", 2);
-    /// assert!(!v.is_empty());
-    /// ```
+    //
+    // # Examples
+    //
+    // ```
+    // use cchashmap::array::ArrayMap;
+    //
+    // let mut v = ArrayMap::new();
+    // assert!(v.is_empty());
+    // v.insert(*b"1", 2);
+    // assert!(!v.is_empty());
+    // ```
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
     /// Clears the set, removing all values.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use cchashmap::array::ArrayMap;
-    ///
-    /// let mut v = ArrayMap::new();
-    /// v.insert(*b"1", 2);
-    /// v.clear();
-    /// assert!(v.is_empty());
-    /// ```
+    //
+    // # Examples
+    //
+    // ```
+    // use cchashmap::array::ArrayMap;
+    //
+    // let mut v = ArrayMap::new();
+    // v.insert(*b"1", 2);
+    // v.clear();
+    // assert!(v.is_empty());
+    // ```
     pub fn clear(&mut self) {
         // FIXME: Replace with `std::intrinsics::drop_in_place` once stabilized.
         // For now, just let drain take care of dropping all our items.
@@ -104,29 +104,24 @@ impl<V> ArrayMap<V> {
     /// The key may be any borrowed form of the map's key type, but
     /// `Hash` and `Eq` on the borrowed form *must* match those for
     /// the key type.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use cchashmap::array::ArrayMap;
-    ///
-    /// let mut map = ArrayMap::new();
-    /// map.insert(*b"1", "a");
-    /// assert_eq!(map.get(*b"1"), Some(&"a"));
-    /// assert_eq!(map.get(*b"2"), None);
-    /// ```
-    pub fn get<K>(&self, key: K) -> Option<&V>
+    //
+    // # Examples
+    //
+    // ```
+    // use cchashmap::array::ArrayMap;
+    //
+    // let mut map = ArrayMap::new();
+    // map.insert(*b"1", "a");
+    // assert_eq!(map.get(*b"1"), Some(&"a"));
+    // assert_eq!(map.get(*b"2"), None);
+    // ```
+    pub fn get<K>(&self, hash: u64, key: K) -> Option<&V>
         where K: Borrow<[u8]>
     {
-        let key = key.borrow();
-
-        for (k, v) in RawItem::new(&self.buf) {
-            if key.borrow() == k {
-                return Some(v);
-            }
+        match self.raw_find(hash, key) {
+            Some((_, _, value)) => Some(value),
+            None => None,
         }
-
-        None
     }
 
     /// Returns true if the map contains a value for the specified key.
@@ -134,21 +129,21 @@ impl<V> ArrayMap<V> {
     /// The key may be any borrowed form of the map's key type, but
     /// `Hash` and `Eq` on the borrowed form *must* match those for
     /// the key type.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use cchashmap::array::ArrayMap;
-    ///
-    /// let mut map = ArrayMap::new();
-    /// map.insert(*b"1", "a");
-    /// assert_eq!(map.contains_key(*b"1"), true);
-    /// assert_eq!(map.contains_key(*b"2"), false);
-    /// ```
-    pub fn contains_key<K>(&self, key: K) -> bool
+    //
+    // # Examples
+    //
+    // ```
+    // use cchashmap::array::ArrayMap;
+    //
+    // let mut map = ArrayMap::new();
+    // map.insert(*b"1", "a");
+    // assert_eq!(map.contains_key(*b"1"), true);
+    // assert_eq!(map.contains_key(*b"2"), false);
+    // ```
+    pub fn contains_key<K>(&self, hash: u64, key: K) -> bool
         where K: Borrow<[u8]>
     {
-        self.get(key).is_some()
+        self.get(hash, key).is_some()
     }
 
     /// Returns a mutable reference to the value corresponding to the key.
@@ -156,53 +151,48 @@ impl<V> ArrayMap<V> {
     /// The key may be any borrowed form of the map's key type, but
     /// `Hash` and `Eq` on the borrowed form *must* match those for
     /// the key type.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use cchashmap::array::ArrayMap;
-    ///
-    /// let mut map = ArrayMap::new();
-    /// map.insert(*b"1", "a");
-    /// if let Some(x) = map.get_mut(*b"1") {
-    ///     *x = "b";
-    /// }
-    /// assert_eq!(map.get(*b"1"), Some(&"b"));
-    /// ```
-    pub fn get_mut<K>(&mut self, key: K) -> Option<&mut V>
+    //
+    // # Examples
+    //
+    // ```
+    // use cchashmap::array::ArrayMap;
+    //
+    // let mut map = ArrayMap::new();
+    // map.insert(*b"1", "a");
+    // if let Some(x) = map.get_mut(*b"1") {
+    //     *x = "b";
+    // }
+    // assert_eq!(map.get(*b"1"), Some(&"b"));
+    // ```
+    pub fn get_mut<K>(&mut self, hash: u64, key: K) -> Option<&mut V>
         where K: Borrow<[u8]>
     {
-        let key = key.borrow();
-
-        for (k, v) in RawItemMut::new(&mut self.buf) {
-            if key == k {
-                return Some(v);
-            }
+        match self.raw_find_mut(hash, key) {
+            Some((_, _, value)) => Some(value),
+            None => None,
         }
-
-        None
     }
 
     /// Inserts a key-value pair into the map. If the key already had a value
     /// present in the map, that value is returned. Otherwise, `None` is returned.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use cchashmap::array::ArrayMap;
-    ///
-    /// let mut map = ArrayMap::new();
-    /// assert_eq!(map.insert(*b"37", "a"), None);
-    /// assert_eq!(map.is_empty(), false);
-    ///
-    /// map.insert(*b"37", "b");
-    /// assert_eq!(map.insert(*b"37", "c"), Some("b"));
-    /// assert_eq!(map.get(*b"37"), Some(&"c"));
-    /// ```
-    pub fn insert<K>(&mut self, key: K, mut value: V) -> Option<V>
+    //
+    // # Examples
+    //
+    // ```
+    // use cchashmap::array::ArrayMap;
+    //
+    // let mut map = ArrayMap::new();
+    // assert_eq!(map.insert(*b"37", "a"), None);
+    // assert_eq!(map.is_empty(), false);
+    //
+    // map.insert(*b"37", "b");
+    // assert_eq!(map.insert(*b"37", "c"), Some("b"));
+    // assert_eq!(map.get(*b"37"), Some(&"c"));
+    // ```
+    pub fn insert<K>(&mut self, hash: u64, key: K, mut value: V) -> Option<V>
         where K: Borrow<[u8]>
     {
-        match self.get_mut(key.borrow()) {
+        match self.get_mut(hash, key.borrow()) {
             Some(v) => {
                 mem::swap(v, &mut value);
                 return Some(value);
@@ -210,7 +200,7 @@ impl<V> ArrayMap<V> {
             None => { }
         }
 
-        self.push(key, value);
+        self.push(hash, key, value);
 
         None
     }
@@ -221,50 +211,73 @@ impl<V> ArrayMap<V> {
     /// The key may be any borrowed form of the map's key type, but
     /// `Hash` and `Eq` on the borrowed form *must* match those for
     /// the key type.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use cchashmap::array::ArrayMap;
-    ///
-    /// let mut map = ArrayMap::new();
-    /// map.insert(*b"1", "a");
-    /// assert_eq!(map.remove(*b"1"), Some("a"));
-    /// assert_eq!(map.remove(*b"1"), None);
-    /// ```
-    pub fn remove<K>(&mut self, key: K) -> Option<V>
+    //
+    // # Examples
+    //
+    // ```
+    // use cchashmap::array::ArrayMap;
+    //
+    // let mut map = ArrayMap::new();
+    // map.insert(*b"1", "a");
+    // assert_eq!(map.remove(*b"1"), Some("a"));
+    // assert_eq!(map.remove(*b"1"), None);
+    // ```
+    pub fn remove<K>(&mut self, hash: u64, key: K) -> Option<V>
         where K: Borrow<[u8]>
     {
-        if self.is_empty() {
-            return None;
-        }
-
         let key = key.borrow();
 
-        unsafe {
-            let item = self.iter_raw()
-                .find(|&(key_ptr, key_len, _)| key == slice::from_raw_parts(key_ptr, key_len));
+        let (hash_ptr, value_ptr) = match self.raw_find(hash, key) {
+            Some((h, _, v)) => ((h as *const u64) as *const u8, (v as *const V) as *const u8),
+            None => { return None; }
+        };
 
-            match item {
-                Some((key_ptr, key_len, val_ptr)) => {
-                    assert!(key_ptr <= val_ptr);
-                    Some(self.remove_at(key_ptr, key_len, val_ptr))
-                }
-                None => None,
-            }
+        unsafe {
+            Some(self.remove_at(hash_ptr, value_ptr))
         }
     }
 
-    unsafe fn remove_at(&mut self, key_ptr: *const u8, key_len: usize, val_ptr: *const u8) -> V {
+    unsafe fn remove_at(&mut self, hash_ptr: *const u8, value_ptr: *const u8) -> V {
         let buf_ptr = self.buf.as_ptr();
         let end_ptr = buf_ptr.offset(self.buf.len() as isize);
+        assert!(end_ptr <= buf_ptr.offset(self.buf.capacity() as isize));
 
-        let len_ptr = key_ptr.offset(-(mem::size_of::<usize>() as isize));
+        assert!(buf_ptr <= hash_ptr  && hash_ptr  <  end_ptr);
+        assert!(buf_ptr <  value_ptr && value_ptr <= end_ptr);
+
+        let next_ptr = value_ptr.offset(mem::size_of::<V>() as isize);
+        assert!(next_ptr <= end_ptr);
+
+        // Truncate the buffer so we don't drop the value twice if there's a panic.
+        let item_index = (hash_ptr as usize) - (buf_ptr as usize);
+        self.buf.set_len(item_index);
+
+        // Read out the value. We now own it since the buffer was truncated.
+        let value: V = ptr::read(value_ptr as *const V);
+
+        // Move the remaining items into this item's spot.
+        let remaining_bytes = (end_ptr as usize) - (next_ptr as usize);
+        assert!(next_ptr.offset(remaining_bytes as isize) <= end_ptr);
+
+        ptr::copy(next_ptr, hash_ptr as *mut u8, remaining_bytes);
+
+        // Finally, restore the length, minus the item we removed.
+        self.buf.set_len(item_index + remaining_bytes);
+        assert!(self.buf.len() < self.buf.capacity());
+
+        value
+
+        /*
+        let hash_ptr = key_ptr.offset(-(mem::size_of::<u64>() as isize));
+        assert!(buf_ptr <= hash_ptr && hash_ptr < end_ptr);
+
+        let len_ptr = hash_ptr.offset(-(mem::size_of::<usize>() as isize));
         assert!(buf_ptr <= len_ptr && len_ptr < end_ptr);
 
-        let len_index = (len_ptr as usize) - (buf_ptr as usize);
-        let key_index = (key_ptr as usize) - (buf_ptr as usize);
-        let val_index = (val_ptr as usize) - (buf_ptr as usize);
+        let hash_index = (hash_ptr as usize) - (buf_ptr as usize);
+        let len_index  = (len_ptr  as usize) - (buf_ptr as usize);
+        let key_index  = (key_ptr  as usize) - (buf_ptr as usize);
+        let val_index  = (val_ptr  as usize) - (buf_ptr as usize);
 
         assert!(end_ptr <= buf_ptr.offset(self.buf.capacity() as isize));
 
@@ -298,56 +311,53 @@ impl<V> ArrayMap<V> {
         for _ in self.iter_raw() {}
 
         value
+        */
     }
 
+    /*
     /// Gets the given key's corresponding entry in the map for in-place manipulation.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use cchashmap::array::ArrayMap;
-    ///
-    /// let mut letters = ArrayMap::new();
-    ///
-    /// for ch in "a short treatise on fungi".chars() {
-    ///     let ch = ch.to_string();
-    ///     let counter = letters.entry(ch.as_bytes()).or_insert(0);
-    ///     *counter += 1;
-    /// }
-    ///
-    /// assert_eq!(letters[*b"s"], 2);
-    /// assert_eq!(letters[*b"t"], 3);
-    /// assert_eq!(letters[*b"u"], 1);
-    /// assert_eq!(letters.get(*b"y"), None);
-    /// ```
-    pub fn entry<'a, K: 'a>(&'a mut self, key: K) -> Entry<'a, K, V>
+    //
+    // # Examples
+    //
+    // ```
+    // use cchashmap::array::ArrayMap;
+    //
+    // let mut letters = ArrayMap::new();
+    //
+    // for ch in "a short treatise on fungi".chars() {
+    //     let ch = ch.to_string();
+    //     let counter = letters.entry(ch.as_bytes()).or_insert(0);
+    //     *counter += 1;
+    // }
+    //
+    // assert_eq!(letters[*b"s"], 2);
+    // assert_eq!(letters[*b"t"], 3);
+    // assert_eq!(letters[*b"u"], 1);
+    // assert_eq!(letters.get(*b"y"), None);
+    // ```
+    pub fn entry<'a, K: 'a>(&'a mut self, hash: u64, key: K) -> Entry<'a, K, V>
         where K: Borrow<[u8]>
     {
-        unsafe {
-            let item = self.iter_raw()
-                .find(|&(key_ptr, key_len, _)| {
-                    key.borrow() == slice::from_raw_parts(key_ptr, key_len)
-                });
-
-            match item {
-                Some((key_ptr, key_len, val_ptr)) => {
-                    Entry::Occupied(OccupiedEntry {
-                        array: self,
-                        key_ptr: key_ptr,
-                        key_len: key_len,
-                        val_ptr: val_ptr,
-                        _marker: PhantomData,
-                    })
-                }
-                None => {
-                    Entry::Vacant(VacantEntry {
-                        array: self,
-                        key: key,
-                    })
-                }
+        match self.raw_find_mut(hash, key.borrow()) {
+            Some((hash, key, value)) => {
+                Entry::Occupied(OccupiedEntry {
+                    array: self,
+                    hash: hash,
+                    key: key,
+                    value: value,
+                    _marker: PhantomData,
+                })
+            }
+            None => {
+                Entry::Vacant(VacantEntry {
+                    array: self,
+                    hash: hash,
+                    key: key,
+                })
             }
         }
     }
+    */
 
     pub fn iter<'a>(&'a self) -> Iter<'a, V> {
         Iter {
@@ -375,6 +385,7 @@ impl<V> ArrayMap<V> {
         }
     }
 
+    /*
     unsafe fn iter_raw(&self) -> IterRaw<V> {
         self.iter_raw_len(self.buf.len())
     }
@@ -387,9 +398,39 @@ impl<V> ArrayMap<V> {
             _marker: PhantomData,
         }
     }
+    */
 
-    #[inline(never)]
-    fn push<K>(&mut self, key: K, value: V) -> &mut V
+    #[inline(always)]
+    fn raw_find<K>(&self, hash: u64, key: K) -> Option<(&u64, &[u8], &V)>
+        where K: Borrow<[u8]>
+    {
+        let key = key.borrow();
+
+        for (h, k, v) in RawItem::new(&self.buf) {
+            if hash == *h { //&& key == k {
+                return Some((h, k, v));
+            }
+        }
+
+        None
+    }
+
+    #[inline(always)]
+    fn raw_find_mut<K>(&mut self, hash: u64, key: K) -> Option<(&u64, &[u8], &mut V)>
+        where K: Borrow<[u8]>
+    {
+        let key = key.borrow();
+
+        for (h, k, v) in RawItemMut::new(&mut self.buf) {
+            if hash == *h && key == k {
+                return Some((h, k, v));
+            }
+        }
+
+        None
+    }
+
+    fn push<K>(&mut self, hash: u64, key: K, value: V) -> &mut V
         where K: Borrow<[u8]>
     {
         let key = key.borrow();
@@ -400,15 +441,20 @@ impl<V> ArrayMap<V> {
 
         // First, make sure we reserve enough space to write everything.
         // FIXME: Account for alignment.
+        let hash_len = mem::size_of::<u64>();
         let len_len = mem::size_of::<usize>();
         let key_len = key.len();
         let value_len = mem::size_of::<V>();
-        let len = buf_len + len_len + key_len + value_len;
+        let len = buf_len + hash_len + len_len + key_len + value_len;
         self.buf.reserve(len);
 
         unsafe {
             // Grab a pointer that's pointing to the end of the space.
             let mut ptr = self.buf.as_mut_ptr().offset(buf_len as isize);
+
+            // Write the hash.
+            ptr::write(ptr as *mut u64, hash);
+            ptr = ptr.offset(hash_len as isize);
 
             // Write the length at the end and adjust the pointer.
             ptr::write(ptr as *mut usize, key_len);
@@ -445,35 +491,24 @@ impl<T: Clone> Clone for ArrayMap<T> {
     fn clone(&self) -> Self {
         let mut dst = ArrayMap::with_capacity_raw(self.buf.len());
 
-        for (key, value) in self.iter() {
-            dst.push(key, value.clone());
+        for (hash, key, value) in self.iter() {
+            dst.push(hash, key, value.clone());
         }
 
         dst
     }
 }
 
-impl<'a, K, V> Index<K> for ArrayMap<V>
-    where K: Borrow<[u8]>
-{
-    type Output = V;
-
-    #[inline]
-    fn index(&self, key: K) -> &V {
-        self.get(key).expect("no entry found for key")
-    }
-}
-
-impl<K, V> FromIterator<(K, V)> for ArrayMap<V>
+impl<K, V> FromIterator<(u64, K, V)> for ArrayMap<V>
     where K: Borrow<[u8]>,
 {
-    fn from_iter<I: IntoIterator<Item=(K, V)>>(iterator: I) -> Self {
+    fn from_iter<I: IntoIterator<Item=(u64, K, V)>>(iterator: I) -> Self {
         let iterator = iterator.into_iter();
 
         let mut bucket = ArrayMap::with_capacity(iterator.size_hint().0);
 
-        for (key, value) in iterator.into_iter() {
-            bucket.insert(key, value);
+        for (hash, key, value) in iterator.into_iter() {
+            bucket.insert(hash, key, value);
         }
 
         bucket
@@ -514,13 +549,18 @@ macro_rules! impl_raw_iter {
                 ptr
             }
 
-            unsafe fn read_key_len(&mut self) -> usize {
+            unsafe fn read_hash(&mut self) -> &'a u64 {
+                let ptr = self.read_ptr(mem::size_of::<u64>());
+                mem::transmute(ptr)
+            }
+
+            unsafe fn read_key_len(&mut self) -> &'a usize {
                 let ptr = self.read_ptr(mem::size_of::<usize>());
-                ptr::read(ptr as *const usize)
+                mem::transmute(ptr)
             }
 
             unsafe fn read_key(&mut self) -> &'a [u8] {
-                let len = self.read_key_len();
+                let len = *self.read_key_len();
                 let ptr = self.read_ptr(len);
                 slice::from_raw_parts(ptr, len)
             }
@@ -532,16 +572,17 @@ macro_rules! impl_raw_iter {
         }
 
         impl<'a, V> Iterator for $name<'a, V> {
-            type Item = (&'a [u8], $value_ty);
+            type Item = (&'a u64, &'a [u8], $value_ty);
 
-            fn next(&mut self) -> Option<(&'a [u8], $value_ty)> {
+            fn next(&mut self) -> Option<Self::Item> {
                 if self.ptr == self.end {
                     None
                 } else {
                     unsafe {
+                        let hash = self.read_hash();
                         let key = self.read_key();
                         let value = self.read_value();
-                        Some((key, value))
+                        Some((hash, key, value))
                     }
                 }
             }
@@ -631,6 +672,7 @@ impl<'a, V> RawItemDrain<'a, V> {
 impl_raw_iter!(RawItemDrain, &'a mut [u8], V, ptr::read);
 
 
+/*
 struct IterRaw<V> {
     ptr: *const u8,
     end: *const u8,
@@ -664,17 +706,18 @@ impl<V> Iterator for IterRaw<V> {
         }
     }
 }
+*/
 
 macro_rules! iterator {
     ($name:ident, $value:ty) => {
         impl<'a, V> Iterator for $name<'a, V> {
-            type Item = (&'a [u8], $value);
+            type Item = (u64, &'a [u8], $value);
 
-            fn next(&mut self) -> Option<(&'a [u8], $value)> {
+            fn next(&mut self) -> Option<Self::Item> {
                 match self.items.next() {
-                    Some((key, value)) => {
+                    Some((hash, key, value)) => {
                         self.len -= 1;
-                        Some((key, value))
+                        Some((*hash, key, value))
                     }
                     None => None,
                 }
@@ -731,15 +774,16 @@ pub enum Entry<'a, K, V: 'a> {
 /// A vacant Entry.
 pub struct VacantEntry<'a, K, V: 'a> {
     array: &'a mut ArrayMap<V>,
+    hash: u64,
     key: K,
 }
 
 /// An occupied Entry.
 pub struct OccupiedEntry<'a, V: 'a> {
     array: &'a mut ArrayMap<V>,
-    key_ptr: *const u8,
-    key_len: usize,
-    val_ptr: *const u8,
+    hash: &'a u64,
+    key: &'a [u8],
+    value: &'a mut V,
     _marker: PhantomData<&'a V>,
 }
 
@@ -768,37 +812,32 @@ impl<'a, K, V> Entry<'a, K, V>
 impl<'a, V> OccupiedEntry<'a, V> {
     /// Gets a reference to the value in the entry.
     pub fn get(&self) -> &V {
-        unsafe {
-            mem::transmute(self.val_ptr as *const V)
-        }
+        self.value
     }
 
     /// Gets a mutable reference to the value in the entry.
     pub fn get_mut(&mut self) -> &mut V {
-        unsafe {
-            mem::transmute(self.val_ptr as *mut V)
-        }
+        self.value
     }
 
     /// Converts the OccupiedEntry into a mutable reference to the value in the entry
     /// with a lifetime bound to the map itself
     pub fn into_mut(self) -> &'a mut V {
-        unsafe {
-            mem::transmute(self.val_ptr as *mut V)
-        }
+        self.value
     }
 
     /// Sets the value of the entry, and returns the entry's old value
     pub fn insert(&mut self, mut value: V) -> V {
-        let old_value = self.get_mut();
-        mem::swap(&mut value, old_value);
+        mem::swap(&mut value, self.value);
         value
     }
 
     /// Takes the value out of the entry, and returns it
     pub fn remove(self) -> V {
         unsafe {
-            self.array.remove_at(self.key_ptr, self.key_len, self.val_ptr)
+            self.array.remove_at(
+                (self.hash as *const u64) as *const u8,
+                (self.value as *const V) as *const u8)
         }
     }
 }
@@ -809,7 +848,7 @@ impl<'a, K, V: 'a> VacantEntry<'a, K, V>
     /// Sets the value of the entry with the VacantEntry's key,
     /// and returns a mutable reference to it
     pub fn insert(self, value: V) -> &'a mut V {
-        self.array.push(self.key, value)
+        self.array.push(self.hash, self.key, value)
     }
 }
 
@@ -817,13 +856,22 @@ impl<V> Arbitrary for ArrayMap<V> where V: Arbitrary {
     fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> ArrayMap<V> {
         use std::collections::HashMap;
         let keys: HashMap<Vec<u8>, V> = Arbitrary::arbitrary(g);
-        ArrayMap::from_iter(keys.into_iter())
+        keys.into_iter()
+            .map(|(k, v)| (util::hash(&k), k, v))
+            .collect()
     }
 
     fn shrink(&self) -> Box<Iterator<Item=ArrayMap<V>>> {
         use std::collections::HashMap;
-        let keys: HashMap<Vec<u8>, V> = self.iter().map(|(k, v)| (k.to_owned(), v.clone())).collect();
-        Box::new(keys.shrink().map(|keys| ArrayMap::from_iter(keys.into_iter())))
+        let keys: HashMap<Vec<u8>, V> = self.iter()
+            .map(|(_, k, v)| (k.to_owned(), v.clone()))
+            .collect();
+
+        Box::new(keys.shrink().map(|keys| {
+            keys.into_iter()
+                .map(|(k, v)| (util::hash(&k), k, v))
+                .collect()
+        }))
     }
 }
 
