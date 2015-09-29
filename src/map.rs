@@ -40,7 +40,7 @@ impl<V> CCHashMap<V> {
     ///
     /// let mut v = CCHashMap::new();
     /// assert_eq!(v.len(), 0);
-    /// v.insert(&b"1"[..], 1);
+    /// v.insert(b"1", 1);
     /// assert_eq!(v.len(), 1);
     /// ```
     pub fn len(&self) -> usize {
@@ -56,7 +56,7 @@ impl<V> CCHashMap<V> {
     ///
     /// let mut v = CCHashMap::new();
     /// assert!(v.is_empty());
-    /// v.insert(&b"1"[..], 1);
+    /// v.insert(b"1", 1);
     /// assert!(!v.is_empty());
     /// ```
     pub fn is_empty(&self) -> bool {
@@ -71,7 +71,7 @@ impl<V> CCHashMap<V> {
     /// use cchashmap::CCHashMap;
     ///
     /// let mut v = CCHashMap::new();
-    /// v.insert(&b"1"[..], 1);
+    /// v.insert(b"1", 1);
     /// v.clear();
     /// assert!(v.is_empty());
     /// ```
@@ -82,10 +82,9 @@ impl<V> CCHashMap<V> {
         self.len = 0;
     }
 
-    pub fn contains_key<K>(&self, key: K) -> bool
+    pub fn contains_key<K>(&self, key: &K) -> bool
         where K: Borrow<[u8]>
     {
-        let key = key.borrow();
         self.get_bucket(key).contains_key(key)
     }
 
@@ -101,14 +100,13 @@ impl<V> CCHashMap<V> {
     /// use cchashmap::CCHashMap;
     ///
     /// let mut map = CCHashMap::new();
-    /// map.insert(&b"1"[..], "a");
-    /// assert_eq!(map.get(&b"1"[..]), Some(&"a"));
-    /// assert_eq!(map.get(&b"2"[..]), None);
+    /// map.insert(b"1", "a");
+    /// assert_eq!(map.get(b"1"), Some(&"a"));
+    /// assert_eq!(map.get(b"2"), None);
     /// ```
-    pub fn get<K>(&self, key: K) -> Option<&V>
+    pub fn get<K>(&self, key: &K) -> Option<&V>
         where K: Borrow<[u8]>
     {
-        let key = key.borrow();
         self.get_bucket(key).get(key)
     }
 
@@ -123,16 +121,15 @@ impl<V> CCHashMap<V> {
     /// use cchashmap::CCHashMap;
     ///
     /// let mut map = CCHashMap::new();
-    /// map.insert(&b"1"[..], "a");
-    /// if let Some(x) = map.get_mut(&b"1"[..]) {
+    /// map.insert(b"1", "a");
+    /// if let Some(x) = map.get_mut(b"1") {
     ///     *x = "b";
     /// }
-    /// assert_eq!(map.get(&b"1"[..]), Some(&"b"));
+    /// assert_eq!(map.get(b"1"), Some(&"b"));
     /// ```
-    pub fn get_mut<K>(&mut self, key: K) -> Option<&mut V>
+    pub fn get_mut<K>(&mut self, key: &K) -> Option<&mut V>
         where K: Borrow<[u8]>
     {
-        let key = key.borrow();
         self.get_bucket_mut(key).get_mut(key)
     }
 
@@ -145,17 +142,16 @@ impl<V> CCHashMap<V> {
     /// use cchashmap::CCHashMap;
     ///
     /// let mut map = CCHashMap::new();
-    /// assert_eq!(map.insert(&b"37"[..], "a"), None);
+    /// assert_eq!(map.insert(b"37", "a"), None);
     /// assert_eq!(map.is_empty(), false);
     ///
-    /// map.insert(&b"37"[..], "b");
-    /// assert_eq!(map.insert(&b"37"[..], "c"), Some("b"));
-    /// assert_eq!(map.get(&b"37"[..]), Some(&"c"));
+    /// map.insert(b"37", "b");
+    /// assert_eq!(map.insert(b"37", "c"), Some("b"));
+    /// assert_eq!(map.get(b"37"), Some(&"c"));
     /// ```
-    pub fn insert<T>(&mut self, key: T, value: V) -> Option<V>
+    pub fn insert<T>(&mut self, key: &T, value: V) -> Option<V>
         where T: Borrow<[u8]>
     {
-        let key = key.borrow();
         let old_value = self.get_bucket_mut(key).insert(key, value);
 
         if old_value.is_none() {
@@ -177,14 +173,13 @@ impl<V> CCHashMap<V> {
     /// use cchashmap::CCHashMap;
     ///
     /// let mut map = CCHashMap::new();
-    /// map.insert(&b"1"[..], "a");
-    /// assert_eq!(map.remove(&b"1"[..]), Some("a"));
-    /// assert_eq!(map.remove(&b"1"[..]), None);
+    /// map.insert(b"1", "a");
+    /// assert_eq!(map.remove(b"1"), Some("a"));
+    /// assert_eq!(map.remove(b"1"), None);
     /// ```
-    pub fn remove<K>(&mut self, key: K) -> Option<V>
+    pub fn remove<K>(&mut self, key: &K) -> Option<V>
         where K: Borrow<[u8]>
     {
-        let key = key.borrow();
         self.get_bucket_mut(key).remove(key)
     }
 
@@ -204,11 +199,11 @@ impl<V> CCHashMap<V> {
     /// use cchashmap::CCHashMap;
     ///
     /// let mut a = CCHashMap::new();
-    /// a.insert(&b"1"[..], "a");
-    /// a.insert(&b"2"[..], "b");
+    /// a.insert(b"1", "a");
+    /// a.insert(b"2", "b");
     ///
     /// let keys: Vec<_> = a.keys().collect();
-    /// assert_eq!(keys, [&b"1"[..], &b"2"[..]]);
+    /// assert_eq!(keys, [b"1", b"2"]);
     /// ```
     pub fn keys<'a>(&'a self) -> Keys<'a, V> {
         fn first<A, B>((a, _): (A, B)) -> A { a }
@@ -225,8 +220,8 @@ impl<V> CCHashMap<V> {
     /// use cchashmap::CCHashMap;
     ///
     /// let mut a = CCHashMap::new();
-    /// a.insert(&b"1"[..], "a");
-    /// a.insert(&b"2"[..], "b");
+    /// a.insert(b"1", "a");
+    /// a.insert(b"2", "b");
     ///
     /// let values: Vec<&str> = a.values().map(|v| *v).collect();
     /// assert_eq!(values, ["a", "b"]);
@@ -258,16 +253,18 @@ impl<V> CCHashMap<V> {
     /// let mut letters = CCHashMap::new();
     ///
     /// for ch in "a short treatise on fungi".chars() {
-    ///     let counter = letters.entry(ch.to_string().as_bytes()).or_insert(0);
+    ///     let counter = letters.entry(&ch.to_string().as_bytes()).or_insert(0);
     ///     *counter += 1;
     /// }
     ///
-    /// assert_eq!(letters[&*b"s"], 2);
-    /// assert_eq!(letters[&*b"t"], 3);
-    /// assert_eq!(letters[&*b"u"], 1);
-    /// assert_eq!(letters.get(&b"y"[..]), None);
+    /// assert_eq!(letters[b"s"], 2);
+    /// assert_eq!(letters[b"t"], 3);
+    /// assert_eq!(letters[b"u"], 1);
+    /// assert_eq!(letters.get(b"y"), None);
     /// ```
-    pub fn entry<'a, 'b>(&'a mut self, key: &'b [u8]) -> Entry<'a, 'b, V> {
+    pub fn entry<'a, 'b, K>(&'a mut self, key: &'b K) -> Entry<'a, 'b, V>
+        where K: Borrow<[u8]>
+    {
         let index = self.get_bucket_index(key);
 
         let &mut CCHashMap { ref mut buckets, ref mut len } = self;
@@ -287,20 +284,26 @@ impl<V> CCHashMap<V> {
         }
     }
 
-    fn get_bucket_index(&self, key: &[u8]) -> usize {
+    fn get_bucket_index<K>(&self, key: &K) -> usize
+        where K: Borrow<[u8]>
+    {
         let mut hasher = SipHasher::new();
-        key.hash(&mut hasher);
+        key.borrow().hash(&mut hasher);
         let hash = hasher.finish() as usize;
 
         hash % self.buckets.len()
     }
 
-    fn get_bucket(&self, key: &[u8]) -> &ArrayMap<V> {
+    fn get_bucket<K>(&self, key: &K) -> &ArrayMap<V>
+        where K: Borrow<[u8]>
+    {
         let index = self.get_bucket_index(key);
         &self.buckets[index]
     }
 
-    fn get_bucket_mut(&mut self, key: &[u8]) -> &mut ArrayMap<V> {
+    fn get_bucket_mut<K>(&mut self, key: &K) -> &mut ArrayMap<V>
+        where K: Borrow<[u8]>
+    {
         let index = self.get_bucket_index(key);
         &mut self.buckets[index]
     }
@@ -313,7 +316,7 @@ impl<'a, K, V> Index<&'a K> for CCHashMap<V>
 
     #[inline]
     fn index(&self, key: &K) -> &V {
-        self.get(key.borrow()).expect("no entry found for key")
+        self.get(key).expect("no entry found for key")
     }
 }
 
@@ -427,7 +430,7 @@ impl<K, V> FromIterator<(K, V)> for CCHashMap<V>
     fn from_iter<I: IntoIterator<Item=(K, V)>>(iterator: I) -> Self {
         let mut map = CCHashMap::new();
         for (key, value) in iterator.into_iter() {
-            map.insert(key, value);
+            map.insert(&key, value);
         }
         map
     }

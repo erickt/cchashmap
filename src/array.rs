@@ -111,20 +111,17 @@ impl<V> ArrayMap<V> {
     ///
     /// let mut map = ArrayMap::new();
     /// map.insert(b"1", "a");
-    /// assert_eq!(map.get(&b"1"[..]), Some(&"a"));
-    /// assert_eq!(map.get(&b"2"[..]), None);
+    /// assert_eq!(map.get(b"1"), Some(&"a"));
+    /// assert_eq!(map.get(b"2"), None);
     /// ```
-    #[inline]
-    pub fn get<K>(&self, key: K) -> Option<&V>
+    pub fn get<K>(&self, key: &K) -> Option<&V>
         where K: Borrow<[u8]>
     {
         let key = key.borrow();
 
-        unsafe {
-            for (key_ptr, key_len, value_ptr) in self.iter_raw() {
-                if key == slice::from_raw_parts(key_ptr, key_len) {
-                    return Some(mem::transmute(value_ptr));
-                }
+        for (k, v) in RawItem::new(&self.buf) {
+            if key == k {
+                return Some(v);
             }
         }
 
@@ -144,13 +141,13 @@ impl<V> ArrayMap<V> {
     ///
     /// let mut map = ArrayMap::new();
     /// map.insert(b"1", "a");
-    /// assert_eq!(map.contains_key(&b"1"[..]), true);
-    /// assert_eq!(map.contains_key(&b"2"[..]), false);
+    /// assert_eq!(map.contains_key(b"1"), true);
+    /// assert_eq!(map.contains_key(b"2"), false);
     /// ```
-    pub fn contains_key<K>(&self, key: K) -> bool
+    pub fn contains_key<K>(&self, key: &K) -> bool
         where K: Borrow<[u8]>
     {
-        self.get(key.borrow()).is_some()
+        self.get(key).is_some()
     }
 
     /// Returns a mutable reference to the value corresponding to the key.
@@ -166,16 +163,23 @@ impl<V> ArrayMap<V> {
     ///
     /// let mut map = ArrayMap::new();
     /// map.insert(b"1", "a");
-    /// if let Some(x) = map.get_mut(&b"1"[..]) {
+    /// if let Some(x) = map.get_mut(b"1") {
     ///     *x = "b";
     /// }
-    /// assert_eq!(map.get(&b"1"[..]), Some(&"b"));
+    /// assert_eq!(map.get(b"1"), Some(&"b"));
     /// ```
-    pub fn get_mut<K>(&mut self, key: K) -> Option<&mut V>
+    pub fn get_mut<K>(&mut self, key: &K) -> Option<&mut V>
         where K: Borrow<[u8]>
     {
         let key = key.borrow();
-        self.iter_mut().find(|&(k, _)| key == k).map(|(_, v)| v)
+
+        for (k, v) in RawItemMut::new(&mut self.buf) {
+            if key == k {
+                return Some(v);
+            }
+        }
+
+        None
     }
 
     /// Inserts a key-value pair into the map. If the key already had a value
@@ -192,15 +196,17 @@ impl<V> ArrayMap<V> {
     ///
     /// map.insert(b"37", "b");
     /// assert_eq!(map.insert(b"37", "c"), Some("b"));
-    /// assert_eq!(map.get(&b"37"[..]), Some(&"c"));
+    /// assert_eq!(map.get(b"37"), Some(&"c"));
     /// ```
-    #[inline(never)]
-    pub fn insert(&mut self, key: &[u8], mut value: V) -> Option<V> {
-        for (k, v) in self.iter_mut() {
-            if key == k {
+    pub fn insert<K>(&mut self, key: &K, mut value: V) -> Option<V>
+        where K: Borrow<[u8]>
+    {
+        match self.get_mut(key) {
+            Some(v) => {
                 mem::swap(v, &mut value);
                 return Some(value);
             }
+            None => { }
         }
 
         self.push(key, value);
@@ -222,13 +228,17 @@ impl<V> ArrayMap<V> {
     ///
     /// let mut map = ArrayMap::new();
     /// map.insert(b"1", "a");
-    /// assert_eq!(map.remove(&b"1"[..]), Some("a"));
-    /// assert_eq!(map.remove(&b"1"[..]), None);
+    /// assert_eq!(map.remove(b"1"), Some("a"));
+    /// assert_eq!(map.remove(b"1"), None);
     /// ```
-    pub fn remove(&mut self, key: &[u8]) -> Option<V> {
+    pub fn remove<K>(&mut self, key: &K) -> Option<V>
+        where K: Borrow<[u8]>
+    {
         if self.is_empty() {
             return None;
         }
+
+        let key = key.borrow();
 
         unsafe {
             let item = self.iter_raw()
@@ -299,16 +309,20 @@ impl<V> ArrayMap<V> {
     /// let mut letters = ArrayMap::new();
     ///
     /// for ch in "a short treatise on fungi".chars() {
-    ///     let counter = letters.entry(ch.to_string().as_bytes()).or_insert(0);
+    ///     let counter = letters.entry(&ch.to_string().as_bytes()).or_insert(0);
     ///     *counter += 1;
     /// }
     ///
-    /// assert_eq!(letters[&*b"s"], 2);
-    /// assert_eq!(letters[&*b"t"], 3);
-    /// assert_eq!(letters[&*b"u"], 1);
-    /// assert_eq!(letters.get(&b"y"[..]), None);
+    /// assert_eq!(letters[b"s"], 2);
+    /// assert_eq!(letters[b"t"], 3);
+    /// assert_eq!(letters[b"u"], 1);
+    /// assert_eq!(letters.get(b"y"), None);
     /// ```
-    pub fn entry<'a, 'b>(&'a mut self, key: &'b [u8]) -> Entry<'a, 'b, V> {
+    pub fn entry<'a, 'b, K>(&'a mut self, key: &'b K) -> Entry<'a, 'b, V>
+        where K: Borrow<[u8]>
+    {
+        let key = key.borrow();
+
         unsafe {
             let item = self.iter_raw()
                 .find(|&(key_ptr, key_len, _)| key == slice::from_raw_parts(key_ptr, key_len));
@@ -334,49 +348,28 @@ impl<V> ArrayMap<V> {
     }
 
     pub fn iter<'a>(&'a self) -> Iter<'a, V> {
-        unsafe {
-            Iter {
-                iter: self.iter_raw(),
-                len: self.len,
-                _marker: PhantomData,
-            }
+        Iter {
+            items: RawItem::new(&self.buf),
+            len: self.len,
         }
     }
 
     pub fn iter_mut<'a>(&'a mut self) -> IterMut<'a, V> {
-        unsafe {
-            IterMut {
-                iter: self.iter_raw(),
-                len: self.len,
-                _marker: PhantomData,
-            }
+        IterMut {
+            items: RawItemMut::new(&mut self.buf),
+            len: self.len,
         }
     }
 
     pub fn drain<'a>(&'a mut self) -> Drain<'a, V> {
-        // Memory safety
-        //
-        // When the Drain is first created, it shortens the length of
-        // the source vector to make sure no uninitalized or moved-from elements
-        // are accessible at all if the Drain's destructor never gets to run.
-        //
-        // Drain will ptr::read out the values to remove.
-        // When finished, remaining tail of the vec is copied back to cover
-        // the hole, and the vector length is restored to the new length.
-        //
-        let buf_len = self.buf.len();
         let len = self.len;
 
-        unsafe {
-            // set self.buf length's to start, to be safe in case Drain is leaked
-            self.buf.set_len(0);
-            self.len = 0;
+        // We no longer have any items.
+        self.len = 0;
 
-            Drain {
-                iter: self.iter_raw_len(buf_len),
-                len: len,
-                _marker: PhantomData,
-            }
+        Drain {
+            items: RawItemDrain::new(&mut self.buf),
+            len: len,
         }
     }
 
@@ -394,7 +387,11 @@ impl<V> ArrayMap<V> {
     }
 
     #[inline(never)]
-    fn push(&mut self, key: &[u8], value: V) -> &mut V {
+    fn push<K>(&mut self, key: &K, value: V) -> &mut V
+        where K: Borrow<[u8]>
+    {
+        let key = key.borrow();
+
         assert!(key.len() < u16::MAX as usize);
 
         let buf_len = self.buf.len();
@@ -447,7 +444,7 @@ impl<T: Clone> Clone for ArrayMap<T> {
         let mut dst = ArrayMap::with_capacity_raw(self.buf.len());
 
         for (key, value) in self.iter() {
-            dst.push(key, value.clone());
+            dst.push(&key, value.clone());
         }
 
         dst
@@ -461,7 +458,7 @@ impl<'a, K, V> Index<&'a K> for ArrayMap<V>
 
     #[inline]
     fn index(&self, key: &K) -> &V {
-        self.get(key.borrow()).expect("no entry found for key")
+        self.get(key).expect("no entry found for key")
     }
 }
 
@@ -474,7 +471,7 @@ impl<K, V> FromIterator<(K, V)> for ArrayMap<V>
         let mut bucket = ArrayMap::with_capacity(iterator.size_hint().0);
 
         for (key, value) in iterator.into_iter() {
-            bucket.insert(key.borrow(), value);
+            bucket.insert(&key, value);
         }
 
         bucket
@@ -502,6 +499,134 @@ unsafe fn raw_item<V>(ptr: *const u8) -> (*const u8, usize, *const u8, *const u8
 
     (key_ptr, key_len, val_ptr, next_ptr)
 }
+
+macro_rules! impl_raw_iter {
+    ($name:ident, $bytes_ty:ty, $value_ty:ty, $read_value:expr) => {
+        impl<'a, V> $name<'a, V> {
+            unsafe fn read_ptr(&mut self, len: usize) -> *const u8 {
+                let ptr = self.ptr;
+                self.ptr = self.ptr.offset(len as isize);
+
+                assert!(self.ptr <= self.end);
+
+                ptr
+            }
+
+            unsafe fn read_key_len(&mut self) -> usize {
+                let ptr = self.read_ptr(mem::size_of::<usize>());
+                ptr::read(ptr as *const usize)
+            }
+
+            unsafe fn read_key(&mut self) -> &'a [u8] {
+                let len = self.read_key_len();
+                let ptr = self.read_ptr(len);
+                slice::from_raw_parts(ptr, len)
+            }
+
+            unsafe fn read_value(&mut self) -> $value_ty {
+                let ptr = self.read_ptr(mem::size_of::<V>()) as *const V;
+                $read_value(ptr)
+            }
+        }
+
+        impl<'a, V> Iterator for $name<'a, V> {
+            type Item = (&'a [u8], $value_ty);
+
+            fn next(&mut self) -> Option<(&'a [u8], $value_ty)> {
+                if self.ptr == self.end {
+                    None
+                } else {
+                    unsafe {
+                        let key = self.read_key();
+                        let value = self.read_value();
+                        Some((key, value))
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct RawItem<'a, V: 'a> {
+    ptr: *const u8,
+    end: *const u8,
+    _marker: PhantomData<&'a V>,
+}
+
+impl<'a, V> RawItem<'a, V> {
+    fn new(bytes: &'a [u8]) -> Self {
+        unsafe {
+            let ptr = bytes.as_ptr();
+            let end = ptr.offset(bytes.len() as isize);
+
+            RawItem {
+                ptr: ptr,
+                end: end,
+                _marker: PhantomData,
+            }
+        }
+    }
+}
+
+impl_raw_iter!(RawItem, &'a [u8], &'a V, mem::transmute);
+
+struct RawItemMut<'a, V: 'a> {
+    ptr: *mut u8,
+    end: *mut u8,
+    _marker: PhantomData<&'a mut V>,
+}
+
+impl<'a, V> RawItemMut<'a, V> {
+    fn new(bytes: &'a mut [u8]) -> Self {
+        unsafe {
+            let ptr = bytes.as_mut_ptr();
+            let end = ptr.offset(bytes.len() as isize);
+
+            RawItemMut {
+                ptr: ptr,
+                end: end,
+                _marker: PhantomData,
+            }
+        }
+    }
+}
+
+impl_raw_iter!(RawItemMut, &'a mut [u8], &'a mut V, mem::transmute);
+
+struct RawItemDrain<'a, V: 'a> {
+    ptr: *const u8,
+    end: *const u8,
+    _marker: PhantomData<&'a mut V>,
+}
+
+impl<'a, V> RawItemDrain<'a, V> {
+    fn new(bytes: &'a mut Vec<u8>) -> Self {
+        // Memory safety
+        //
+        // When the Drain is first created, it shortens the length of
+        // the source vector to make sure no uninitalized or moved-from elements
+        // are accessible at all if the Drain's destructor never gets to run.
+        //
+        // Drain will ptr::read out the values to remove.
+        // When finished, remaining tail of the vec is copied back to cover
+        // the hole, and the vector length is restored to the new length.
+        //
+        unsafe {
+            let ptr = bytes.as_ptr();
+            let end = ptr.offset(bytes.len() as isize);
+
+            bytes.set_len(0);
+
+            RawItemDrain {
+                ptr: ptr,
+                end: end,
+                _marker: PhantomData,
+            }
+        }
+    }
+}
+
+impl_raw_iter!(RawItemDrain, &'a mut [u8], V, ptr::read);
 
 
 struct IterRaw<V> {
@@ -539,19 +664,15 @@ impl<V> Iterator for IterRaw<V> {
 }
 
 macro_rules! iterator {
-    (struct $name:ident -> $elem:ty, $read:expr) => {
+    ($name:ident, $value:ty) => {
         impl<'a, V> Iterator for $name<'a, V> {
-            type Item = (&'a [u8], $elem);
+            type Item = (&'a [u8], $value);
 
-            fn next(&mut self) -> Option<(&'a [u8], $elem)> {
-                match self.iter.next() {
-                    Some((key_ptr, len, value_ptr)) => {
+            fn next(&mut self) -> Option<(&'a [u8], $value)> {
+                match self.items.next() {
+                    Some((key, value)) => {
                         self.len -= 1;
-                        unsafe {
-                            let key = slice::from_raw_parts(key_ptr, len);
-                            let value = $read(value_ptr as *const V);
-                            Some((key, value))
-                        }
+                        Some((key, value))
                     }
                     None => None,
                 }
@@ -566,28 +687,25 @@ macro_rules! iterator {
 }
 
 pub struct Iter<'a, V: 'a> {
-    iter: IterRaw<V>,
+    items: RawItem<'a, V>,
     len: usize,
-    _marker: PhantomData<&'a V>,
 }
 
-iterator! { struct Iter -> &'a V, mem::transmute }
+iterator!(Iter, &'a V);
 
 pub struct IterMut<'a, V: 'a> {
-    iter: IterRaw<V>,
+    items: RawItemMut<'a, V>,
     len: usize,
-    _marker: PhantomData<&'a V>,
 }
 
-iterator! { struct IterMut -> &'a mut V, mem::transmute }
+iterator!(IterMut, &'a mut V);
 
 pub struct Drain<'a, V: 'a> {
-    iter: IterRaw<V>,
+    items: RawItemDrain<'a, V>,
     len: usize,
-    _marker: PhantomData<&'a V>,
 }
 
-iterator! { struct Drain -> V, ptr::read }
+iterator!(Drain, V);
 
 unsafe impl<'a, T: Sync> Sync for Drain<'a, T> {}
 unsafe impl<'a, T: Send> Send for Drain<'a, T> {}
@@ -598,8 +716,6 @@ impl<'a, T> Drop for Drain<'a, T> {
         while let Some(_) = self.next() { }
     }
 }
-
-//iterator! { struct IntoIter -> *mut u8, &'a mut V }
 
 /// A view into a single entry in a map, which may either be vacant or occupied.
 pub enum Entry<'a, 'b, V: 'a> {
@@ -687,7 +803,7 @@ impl<'a, 'b, V: 'a> VacantEntry<'a, 'b, V> {
     /// Sets the value of the entry with the VacantEntry's key,
     /// and returns a mutable reference to it
     pub fn insert(self, value: V) -> &'a mut V {
-        self.array.push(self.key, value)
+        self.array.push(&self.key, value)
     }
 }
 
