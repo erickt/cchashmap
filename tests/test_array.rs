@@ -48,11 +48,11 @@ fn quickcheck_insert_and_get() {
         let mut array = ArrayMap::new();
 
         for (key, value) in map.iter() {
-            array.insert(key, *value);
+            array.insert(&**key, *value);
         }
 
         for (key, value) in map.iter() {
-            if array.get(key) != Some(value) {
+            if array.get(&**key) != Some(value) {
                 return false;
             }
         }
@@ -63,7 +63,7 @@ fn quickcheck_insert_and_get() {
             missing_key.push(0);
         }
 
-        array.get(&missing_key).is_none()
+        array.get(missing_key).is_none()
     }
 
     quickcheck::quickcheck(prop as fn(BTreeMap<Vec<u8>, u32>) -> bool);
@@ -88,7 +88,7 @@ fn test_drain_empty() {
 #[test]
 fn test_drain_one() {
     let mut array = ArrayMap::<u32>::new();
-    array.insert(&[], 0);
+    array.insert([], 0);
 
     assert_eq!(array.len(), 1);
     assert!(!array.is_empty());
@@ -139,8 +139,8 @@ fn test_drop_works() {
     let (mut count_x, mut count_y) = (0, 0);
     {
         let mut array = ArrayMap::new();
-        array.insert(b"a", DropCounter { count: &mut count_x });
-        array.insert(b"b", DropCounter { count: &mut count_y });
+        array.insert(*b"a", DropCounter { count: &mut count_x });
+        array.insert(*b"b", DropCounter { count: &mut count_y });
         drop(array);
     };
     assert_eq!(count_x, 1);
@@ -158,9 +158,9 @@ fn test_drain_drops() {
     }
 
     let mut array = ArrayMap::new();
-    array.insert(b"a", Elem(1));
-    array.insert(b"b", Elem(2));
-    array.insert(b"c", Elem(3));
+    array.insert(*b"a", Elem(1));
+    array.insert(*b"b", Elem(2));
+    array.insert(*b"c", Elem(3));
 
     assert_eq!(unsafe { drops }, 0);
 
@@ -187,10 +187,10 @@ fn test_drain_fail() {
     }
 
     let mut array = ArrayMap::new();
-    array.insert(b"a", BadElem(1));
-    array.insert(b"b", BadElem(2));
-    array.insert(b"c", BadElem(0xbadbeef));
-    array.insert(b"d", BadElem(3));
+    array.insert(*b"a", BadElem(1));
+    array.insert(*b"b", BadElem(2));
+    array.insert(*b"c", BadElem(0xbadbeef));
+    array.insert(*b"d", BadElem(3));
 
     array.drain();
 }

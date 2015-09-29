@@ -196,7 +196,8 @@ macro_rules! bench_remove {
             b.iter(|| {
                 let mut haystack = haystack.clone();
                 for key in fixture.iter() {
-                    test::black_box(haystack.remove(key.as_bytes()));
+                    let key: &[u8] = key.as_bytes();
+                    test::black_box(haystack.remove(key));
                 }
             })
         }
@@ -206,4 +207,4 @@ macro_rules! bench_remove {
 
 bench_remove!(bench_btreemap_remove, make_btreemap);
 bench_remove!(bench_hashmap_remove, make_hashmap);
-bench_remove!(bench_cchashmap_remove, make_cchashmap);
+//bench_remove!(bench_cchashmap_remove, make_cchashmap);

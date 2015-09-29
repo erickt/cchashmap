@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::convert::AsRef;
 use std::fmt;
 use std::iter::FromIterator;
 
@@ -86,7 +87,7 @@ impl CCHashSet {
     /// assert_eq!(set.insert(2), false);
     /// assert_eq!(set.len(), 1);
     /// ```
-    pub fn insert<T>(&mut self, key: &T) -> bool
+    pub fn insert<T>(&mut self, key: T) -> bool
         where T: Borrow<[u8]>
     {
         self.map.insert(key, ()).is_none()
@@ -127,7 +128,7 @@ impl CCHashSet {
     /// assert_eq!(set.contains(&1), true);
     /// assert_eq!(set.contains(&4), false);
     /// ```
-    pub fn contains<T>(&self, value: &T) -> bool
+    pub fn contains<T>(&self, value: T) -> bool
         where T: Borrow<[u8]>
     {
         self.map.contains_key(value)

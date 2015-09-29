@@ -15,19 +15,19 @@ fn test_insert() {
     assert!(set.is_empty());
     assert_eq!(set.len(), 0);
 
-    set.insert(b"1234");
+    set.insert(*b"1234");
     assert!(!set.is_empty());
     assert_eq!(set.len(), 1);
 
-    assert!(set.contains(b"1234"));
-    assert!(!set.contains(b"1235"));
+    assert!(set.contains(*b"1234"));
+    assert!(!set.contains(*b"1235"));
 }
 
 #[test]
 fn test_empty_insert() {
     let mut set = CCHashSet::new();
-    set.insert(b"");
-    set.insert(b"");
+    set.insert(*b"");
+    set.insert(*b"");
     assert_eq!(set.len(), 1);
 
     let mut iter = set.iter();
@@ -38,8 +38,8 @@ fn test_empty_insert() {
 #[test]
 fn test_empty_single_insert() {
     let mut set = CCHashSet::new();
-    set.insert(b"");
-    set.insert(b"\x21");
+    set.insert(*b"");
+    set.insert(*b"\x21");
     assert_eq!(set.len(), 2);
 
     let set = set.iter().collect::<BTreeSet<&[u8]>>();
