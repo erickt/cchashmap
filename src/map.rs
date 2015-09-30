@@ -49,6 +49,26 @@ impl<V> CCHashMap<V> {
         self.len
     }
 
+    pub fn hits(&self) -> (f64, usize, usize, usize, usize, usize) {
+        let mut len = 0;
+        let mut min = ::std::usize::MAX;
+        let mut max = 0;
+        let mut queries = 0;
+        let mut hash_hits = 0;
+        let mut key_hits = 0;
+
+        for bucket in self.buckets.iter() {
+            len += bucket.len();
+            min = ::std::cmp::min(min, bucket.len());
+            max = ::std::cmp::max(max, bucket.len());
+            queries += bucket.queries.get();
+            hash_hits += bucket.hash_hits.get();
+            key_hits += bucket.key_hits.get();
+        }
+
+        (len as f64 / self.buckets.len() as f64, min, max, queries, hash_hits, key_hits)
+    }
+
     /// Returns true if the set contains no elements.
     ///
     /// # Examples

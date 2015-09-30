@@ -26,11 +26,12 @@ fn make_fixture() -> (Vec<String>) {
     words
 }
 
-fn make_btreemap(fixture: &[String]) -> BTreeMap<Vec<u8>, usize> {
+fn make_btreemap(fixture: &[String]) -> BTreeMap<Vec<u8>, ()> {
     let mut map = BTreeMap::new();
     for key in fixture.iter() {
         let key = key.as_bytes();
 
+        /*
         let found = match map.get_mut(key) {
             Some(count) => { *count = *count + 1; true }
             None => false,
@@ -39,15 +40,19 @@ fn make_btreemap(fixture: &[String]) -> BTreeMap<Vec<u8>, usize> {
         if !found {
             map.insert(key.to_owned(), 0);
         }
+        */
+
+        map.insert(key.to_owned(), ());
     }
     map
 }
 
-fn make_hashmap(fixture: &[String]) -> HashMap<Vec<u8>, usize> {
+fn make_hashmap(fixture: &[String]) -> HashMap<Vec<u8>, ()> {
     let mut map = HashMap::with_capacity(fixture.len());
     for key in fixture.iter() {
         let key = key.as_bytes();
 
+        /*
         let found = match map.get_mut(key) {
             Some(count) => { *count = *count + 1; true }
             None => false,
@@ -56,17 +61,21 @@ fn make_hashmap(fixture: &[String]) -> HashMap<Vec<u8>, usize> {
         if !found {
             map.insert(key.to_owned(), 0);
         }
+        */
+
+        map.insert(key.to_owned(), ());
     }
     map
 }
 
-fn make_cchashmap(fixture: &[String]) -> CCHashMap<usize> {
+fn make_cchashmap(fixture: &[String]) -> CCHashMap<()> {
     let mut map = CCHashMap::with_capacity(4096);
 
     for key in fixture.iter() {
         //let count = map.entry(key.as_bytes()).or_insert(0);
         //*count = *count + 1;
         //
+        /*
         let inserted = match map.get_mut(key.as_bytes()) {
             Some(count) => {
                 *count = *count + 1;
@@ -78,10 +87,13 @@ fn make_cchashmap(fixture: &[String]) -> CCHashMap<usize> {
         if !inserted {
             map.insert(key.as_bytes(), 0);
         }
+        */
+        map.insert(key.as_bytes(), ());
     }
     map
 }
 
+/*
 #[test]
 fn test_hashmap() {
     let fixture = make_fixture();
@@ -132,33 +144,38 @@ macro_rules! bench_iter {
 bench_iter!(bench_btreemap_iter, make_btreemap);
 bench_iter!(bench_hashmap_iter, make_hashmap);
 bench_iter!(bench_cchashmap_iter, make_cchashmap);
+*/
 
 macro_rules! bench_get {
-    ($name:ident, $ctor:expr) => {
+    ($name:ident, $ctor:expr, $haystack:ident, $after:expr) => {
         #[bench]
         fn $name(b: &mut test::Bencher) {
             let fixture = make_fixture();
             let fixture_map = make_hashmap(&fixture);
             b.bytes = fixture.iter().fold(0, |sum, word| sum + word.len() as u64);
-            let haystack = $ctor(&fixture);
+            let $haystack = $ctor(&fixture);
 
             b.iter(|| {
                 for key in fixture.iter() {
                     //let fixture_value = fixture_map.get(key.as_bytes());
-                    let haystack_value = haystack.get(key.as_bytes());
+                    let haystack_value = $haystack.get(key.as_bytes());
                     //assert_eq!(fixture_value, haystack_value);
 
                     test::black_box(haystack_value);
                 }
+
+                $after
             })
         }
 
     }
 }
 
-bench_get!(bench_btreemap_get, make_btreemap);
-bench_get!(bench_hashmap_get, make_hashmap);
-bench_get!(bench_cchashmap_get, make_cchashmap);
+bench_get!(bench_btreemap_get, make_btreemap, haystack, {});
+bench_get!(bench_hashmap_get, make_hashmap, haystack, {});
+bench_get!(bench_cchashmap_get, make_cchashmap, haystack, {
+    //assert_eq!(haystack.hits(), (0.0, 0, 0, 0, 0, 0));
+});
 
 macro_rules! bench_contains_key {
     ($name:ident, $ctor:expr) => {
@@ -178,6 +195,7 @@ macro_rules! bench_contains_key {
     }
 }
 
+/*
 bench_contains_key!(bench_btreemap_contains_key, make_btreemap);
 bench_contains_key!(bench_hashmap_contains_key, make_hashmap);
 bench_contains_key!(bench_cchashmap_contains_key, make_cchashmap);
@@ -224,3 +242,4 @@ macro_rules! bench_remove {
 bench_remove!(bench_btreemap_remove, make_btreemap);
 bench_remove!(bench_hashmap_remove, make_hashmap);
 bench_remove!(bench_cchashmap_remove, make_cchashmap);
+*/
