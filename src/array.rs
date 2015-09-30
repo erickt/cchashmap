@@ -192,8 +192,8 @@ impl<V> ArrayMap<V> {
     pub fn insert<K>(&mut self, hash: u64, key: K, mut value: V) -> Option<V>
         where K: Borrow<[u8]>
     {
-        match self.get_mut(hash, key.borrow()) {
-            Some(v) => {
+        match self.raw_find_mut(hash, key.borrow()) {
+            Some((_, _, v)) => {
                 mem::swap(v, &mut value);
                 return Some(value);
             }
@@ -240,13 +240,13 @@ impl<V> ArrayMap<V> {
     unsafe fn remove_at(&mut self, hash_ptr: *const u8, value_ptr: *const u8) -> V {
         let buf_ptr = self.buf.as_ptr();
         let end_ptr = buf_ptr.offset(self.buf.len() as isize);
-        assert!(end_ptr <= buf_ptr.offset(self.buf.capacity() as isize));
+        debug_assert!(end_ptr <= buf_ptr.offset(self.buf.capacity() as isize));
 
-        assert!(buf_ptr <= hash_ptr  && hash_ptr  <  end_ptr);
-        assert!(buf_ptr <  value_ptr && value_ptr <= end_ptr);
+        debug_assert!(buf_ptr <= hash_ptr  && hash_ptr  <  end_ptr);
+        debug_assert!(buf_ptr <  value_ptr && value_ptr <= end_ptr);
 
         let next_ptr = value_ptr.offset(mem::size_of::<V>() as isize);
-        assert!(next_ptr <= end_ptr);
+        debug_assert!(next_ptr <= end_ptr);
 
         // Truncate the buffer so we don't drop the value twice if there's a panic.
         let item_index = (hash_ptr as usize) - (buf_ptr as usize);
@@ -257,34 +257,34 @@ impl<V> ArrayMap<V> {
 
         // Move the remaining items into this item's spot.
         let remaining_bytes = (end_ptr as usize) - (next_ptr as usize);
-        assert!(next_ptr.offset(remaining_bytes as isize) <= end_ptr);
+        debug_assert!(next_ptr.offset(remaining_bytes as isize) <= end_ptr);
 
         ptr::copy(next_ptr, hash_ptr as *mut u8, remaining_bytes);
 
         // Finally, restore the length, minus the item we removed.
         self.buf.set_len(item_index + remaining_bytes);
-        assert!(self.buf.len() < self.buf.capacity());
+        debug_assert!(self.buf.len() < self.buf.capacity());
 
         value
 
         /*
         let hash_ptr = key_ptr.offset(-(mem::size_of::<u64>() as isize));
-        assert!(buf_ptr <= hash_ptr && hash_ptr < end_ptr);
+        debug_assert!(buf_ptr <= hash_ptr && hash_ptr < end_ptr);
 
         let len_ptr = hash_ptr.offset(-(mem::size_of::<usize>() as isize));
-        assert!(buf_ptr <= len_ptr && len_ptr < end_ptr);
+        debug_assert!(buf_ptr <= len_ptr && len_ptr < end_ptr);
 
         let hash_index = (hash_ptr as usize) - (buf_ptr as usize);
         let len_index  = (len_ptr  as usize) - (buf_ptr as usize);
         let key_index  = (key_ptr  as usize) - (buf_ptr as usize);
         let val_index  = (val_ptr  as usize) - (buf_ptr as usize);
 
-        assert!(end_ptr <= buf_ptr.offset(self.buf.capacity() as isize));
+        debug_assert!(end_ptr <= buf_ptr.offset(self.buf.capacity() as isize));
 
-        assert!(len_ptr <  key_ptr && key_ptr < end_ptr);
-        assert!(key_ptr <= val_ptr);
-        assert!(val_ptr <  end_ptr);
-        assert!(val_ptr.offset(mem::size_of::<usize>() as isize) <= end_ptr);
+        debug_assert!(len_ptr <  key_ptr && key_ptr < end_ptr);
+        debug_assert!(key_ptr <= val_ptr);
+        debug_assert!(val_ptr <  end_ptr);
+        debug_assert!(val_ptr.offset(mem::size_of::<usize>() as isize) <= end_ptr);
 
         let next_ptr = val_ptr.offset(mem::size_of::<V>() as isize);
         let remaining_bytes = (end_ptr as usize) - (next_ptr as usize);
@@ -294,19 +294,19 @@ impl<V> ArrayMap<V> {
         let item_index = (item_ptr as usize) - (buf_ptr as usize);
 
         self.buf.set_len(item_index);
-        assert!(end_ptr <= buf_ptr.offset(self.buf.capacity() as isize));
+        debug_assert!(end_ptr <= buf_ptr.offset(self.buf.capacity() as isize));
 
         // Read out the value. We now own it since the buffer was truncated.
         let value: V = ptr::read(val_ptr as *const V);
 
         // Move the remaining items into this item's spot.
-        assert!(next_ptr.offset(remaining_bytes as isize) <= end_ptr);
+        debug_assert!(next_ptr.offset(remaining_bytes as isize) <= end_ptr);
 
         ptr::copy(next_ptr, item_ptr as *mut u8, remaining_bytes);
 
         // Finally, restore the length, minus the item we removed.
         self.buf.set_len(item_index + remaining_bytes);
-        assert!(self.buf.len() < self.buf.capacity());
+        debug_assert!(self.buf.len() < self.buf.capacity());
 
         for _ in self.iter_raw() {}
 
@@ -406,8 +406,8 @@ impl<V> ArrayMap<V> {
     {
         let key = key.borrow();
 
-        for (h, k, v) in RawItem::new(&self.buf) {
-            if hash == *h { //&& key == k {
+        for (h, k, v) in RawItem::<V>::new(&self.buf) {
+            if hash == *h && key == k {
                 return Some((h, k, v));
             }
         }
@@ -435,7 +435,7 @@ impl<V> ArrayMap<V> {
     {
         let key = key.borrow();
 
-        assert!(key.len() < u16::MAX as usize);
+        debug_assert!(key.len() < u16::MAX as usize);
 
         let buf_len = self.buf.len();
 
@@ -472,7 +472,7 @@ impl<V> ArrayMap<V> {
 
             self.len += 1;
 
-            assert!(self.buf.len() <= self.buf.capacity());
+            debug_assert!(self.buf.len() <= self.buf.capacity());
 
             mem::transmute(ptr)
         }
@@ -527,10 +527,10 @@ unsafe fn raw_item<V>(ptr: *const u8) -> (*const u8, usize, *const u8, *const u8
     let key_len = ptr::read(len_ptr as *const usize);
 
     let key_ptr = len_ptr.offset(mem::size_of::<usize>() as isize);
-    assert!(len_ptr < key_ptr);
+    debug_assert!(len_ptr < key_ptr);
 
     let val_ptr = key_ptr.offset(key_len as isize);
-    assert!(key_ptr <= val_ptr);
+    debug_assert!(key_ptr <= val_ptr);
 
     let next_ptr = val_ptr.offset(mem::size_of::<V>() as isize);
 
@@ -544,7 +544,7 @@ macro_rules! impl_raw_iter {
                 let ptr = self.ptr;
                 self.ptr = self.ptr.offset(len as isize);
 
-                assert!(self.ptr <= self.end);
+                debug_assert!(self.ptr <= self.end);
 
                 ptr
             }

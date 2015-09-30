@@ -144,9 +144,9 @@ macro_rules! bench_get {
 
             b.iter(|| {
                 for key in fixture.iter() {
-                    let fixture_value = fixture_map.get(key.as_bytes());
+                    //let fixture_value = fixture_map.get(key.as_bytes());
                     let haystack_value = haystack.get(key.as_bytes());
-                    assert_eq!(fixture_value, haystack_value);
+                    //assert_eq!(fixture_value, haystack_value);
 
                     test::black_box(haystack_value);
                 }

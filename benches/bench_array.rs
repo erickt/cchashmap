@@ -11,8 +11,8 @@ use std::iter::FromIterator;
 use byteorder::{ByteOrder, NativeEndian};
 use cchashmap::array::ArrayMap;
 
-static OUTER_LEN: usize = 128;
-static INNER_LEN: usize = 8;
+static OUTER_LEN: usize = 4096;
+static INNER_LEN: usize = 128;
 
 
 fn make_fixture() -> Vec<(Vec<u8>, usize)> {
@@ -20,11 +20,12 @@ fn make_fixture() -> Vec<(Vec<u8>, usize)> {
     let mut bytes = [0; 8];
 
     for index in 0 .. OUTER_LEN {
-        let mut hay = Vec::with_capacity(8);
+        let mut hay = Vec::with_capacity(8 * INNER_LEN);
         for _ in 0 .. INNER_LEN {
             NativeEndian::write_u64(&mut bytes, index as u64);
             hay.extend(&bytes);
         }
+        hay.sort();
         haystack.push((hay, index));
     }
 
@@ -47,6 +48,23 @@ macro_rules! bench_insert {
     }
 }
 
+bench_insert!(bench_insert_vec, fixture, {
+    let mut map = Vec::new();
+    for &(ref key, value) in fixture.iter() {
+        map.push((key.clone(), value.clone()));
+    }
+    map
+});
+
+bench_insert!(bench_insert_vec_with_hash, fixture, {
+    let mut map = Vec::new();
+    for &(ref key, value) in fixture.iter() {
+        let hash = ::cchashmap::util::hash(key);
+        map.push((hash, key.clone(), value.clone()));
+    }
+    map
+});
+
 bench_insert!(bench_insert_btreemap, fixture, {
     let mut map = BTreeMap::<Vec<u8>, usize>::new();
     for &(ref key, value) in fixture.iter() {
@@ -66,11 +84,13 @@ bench_insert!(bench_insert_hashmap, fixture, {
 bench_insert!(bench_insert_arraymap, fixture, {
     let mut map = ArrayMap::<usize>::new();
     for &(ref key, value) in fixture.iter() {
-        map.insert(key, value.clone());
+        let hash = ::cchashmap::util::hash(key);
+        map.insert(hash, &**key, value.clone());
     }
     map
 });
 
+/*
 macro_rules! bench_iter {
     ($name:ident, $fixture:ident, $ctor:expr) => {
         #[bench]
@@ -133,3 +153,4 @@ bench_contains_key!(bench_contains_key_hashmap, fixture, {
 bench_contains_key!(bench_contains_key_arraymap, fixture, {
     ArrayMap::<usize>::from_iter(fixture.iter().cloned())
 });
+*/
