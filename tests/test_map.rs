@@ -65,6 +65,7 @@ fn quickcheck_insert_and_get() {
     quickcheck::quickcheck(prop as fn(BTreeMap<Vec<u8>, u32>) -> bool);
 }
 
+/*
 #[test]
 fn test_drain_empty() {
     let mut map = CCHashMap::<u32>::new();
@@ -209,3 +210,4 @@ fn test_drain_fail() {
 
     map.drain();
 }
+*/

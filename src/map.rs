@@ -1,7 +1,6 @@
 use std::borrow::Borrow;
-use std::convert::AsRef;
 use std::fmt;
-use std::hash::{Hash, Hasher};
+use std::hash::Hasher;
 use std::iter::{self, FromIterator};
 use std::ops::Index;
 use std::slice;
@@ -49,8 +48,9 @@ impl<V> CCHashMap<V> {
         self.len
     }
 
-    pub fn hits(&self) -> (f64, usize, usize, usize, usize, usize) {
+    pub fn hits(&self) -> (f64, f64, usize, usize, usize, usize, usize) {
         let mut len = 0;
+        let mut buf_len = 0;
         let mut min = ::std::usize::MAX;
         let mut max = 0;
         let mut queries = 0;
@@ -59,6 +59,7 @@ impl<V> CCHashMap<V> {
 
         for bucket in self.buckets.iter() {
             len += bucket.len();
+            buf_len += bucket.buf.len();
             min = ::std::cmp::min(min, bucket.len());
             max = ::std::cmp::max(max, bucket.len());
             queries += bucket.queries.get();
@@ -66,7 +67,10 @@ impl<V> CCHashMap<V> {
             key_hits += bucket.key_hits.get();
         }
 
-        (len as f64 / self.buckets.len() as f64, min, max, queries, hash_hits, key_hits)
+        (
+            len as f64 / self.buckets.len() as f64,
+            buf_len as f64 / self.buckets.len() as f64,
+            min, max, queries, hash_hits, key_hits)
     }
 
     /// Returns true if the set contains no elements.
@@ -124,7 +128,7 @@ impl<V> CCHashMap<V> {
         where K: Borrow<[u8]>
     {
         let hash = util::hash(key.borrow());
-        self.get_bucket(hash).contains_key(hash, key)
+        self.get_bucket(hash).contains_key_with_hash(hash, key)
     }
 
     /// Returns a reference to the value corresponding to the key.
@@ -147,7 +151,7 @@ impl<V> CCHashMap<V> {
         where K: Borrow<[u8]>
     {
         let hash = util::hash(key.borrow());
-        self.get_bucket(hash).get(hash, key)
+        self.get_bucket(hash).get_with_hash(hash, key)
     }
 
     /// Returns a mutable reference to the value corresponding to the key.
@@ -171,7 +175,7 @@ impl<V> CCHashMap<V> {
         where K: Borrow<[u8]>
     {
         let hash = util::hash(key.borrow());
-        self.get_bucket_mut(hash).get_mut(hash, key)
+        self.get_bucket_mut(hash).get_mut_with_hash(hash, key)
     }
 
     /// Inserts a key-value pair into the map. If the key already had a value
@@ -195,7 +199,7 @@ impl<V> CCHashMap<V> {
     {
         let key = key.borrow();
         let hash = util::hash(key);
-        let old_value = self.get_bucket_mut(hash).insert(hash, key, value);
+        let old_value = self.get_bucket_mut(hash).insert_with_hash(hash, key, value);
 
         if old_value.is_none() {
             self.len += 1;
@@ -224,7 +228,7 @@ impl<V> CCHashMap<V> {
         where K: Borrow<[u8]>
     {
         let hash = util::hash(key.borrow());
-        self.get_bucket_mut(hash).remove(hash, key)
+        self.get_bucket_mut(hash).remove_with_hash(hash, key)
     }
 
     pub fn iter<'a>(&'a self) -> Iter<'a, V> {
@@ -235,7 +239,6 @@ impl<V> CCHashMap<V> {
         }
     }
 
-    /*
     /// Gets an iterator over the keys of the map.
     ///
     /// # Examples
@@ -278,6 +281,7 @@ impl<V> CCHashMap<V> {
         Values { inner: self.iter().map(second) }
     }
 
+    /*
     pub fn drain<'a>(&'a mut self) -> Drain<'a, V> {
         let &mut CCHashMap { ref mut buckets, ref mut len } = self;
 

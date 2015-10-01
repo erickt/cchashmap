@@ -1,3 +1,4 @@
+#![cfg(fee)]
 #![feature(test)]
 
 extern crate cchashmap;

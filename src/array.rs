@@ -12,7 +12,7 @@ use quickcheck::{self, Arbitrary};
 use util;
 
 pub struct ArrayMap<V> {
-    buf: Vec<u8>,
+    pub buf: Vec<u8>,
     len: usize,
     pub queries: ::std::cell::Cell<usize>,
     pub hash_hits: ::std::cell::Cell<usize>,
@@ -20,25 +20,24 @@ pub struct ArrayMap<V> {
     _marker: PhantomData<V>,
 }
 
+type KeyLen = u8;
+
 impl<V> ArrayMap<V> {
     pub fn new() -> Self {
-        ArrayMap::with_capacity(0)
+        ArrayMap::with_capacity_and_key_len(0, 0)
     }
 
     pub fn with_capacity(cap: usize) -> Self {
-        // Guestimate how much capacity we will need. Assume keys will be on average 4 bytes long.
-        let len_size   = cap.checked_mul(mem::size_of::<usize>())
-            .expect("capacity overflow");
+        // Guestimate how much capacity we will need. Assume keys will be on average 8 bytes long.
+        ArrayMap::with_capacity_and_key_len(cap, 8)
+    }
 
-        let key_size   = cap.checked_mul(mem::size_of::<*const u8>() * 4)
-            .expect("capacity overflow");
+    pub fn with_capacity_and_key_len(cap: usize, key_len: usize) -> Self {
+        let size = key_len
+            .checked_add(mem::size_of::<KeyLen>()).expect("capacity overflow")
+            .checked_add(mem::size_of::<  V   >()).expect("capacity overflow");
 
-        let value_size = cap.checked_mul(mem::size_of::<V>())
-            .expect("capacity overflow");
-
-        let size = len_size
-            .checked_add(key_size).expect("capacity overflow")
-            .checked_add(value_size).expect("capacity overflow");
+        let size = cap.checked_mul(size).expect("capcity overflow");
 
         ArrayMap::with_capacity_raw(size)
     }
@@ -55,49 +54,50 @@ impl<V> ArrayMap<V> {
     }
 
     /// Returns the number of elements in the set.
-    //
-    // # Examples
-    //
-    // ```
-    // use cchashmap::array::ArrayMap;
-    //
-    // let mut v = ArrayMap::new();
-    // assert_eq!(v.len(), 0);
-    // v.insert(*b"1", 2);
-    // assert_eq!(v.len(), 1);
-    // ```
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cchashmap::array::ArrayMap;
+    ///
+    /// let mut v = ArrayMap::new();
+    /// assert_eq!(v.len(), 0);
+    /// v.insert(*b"1", 2);
+    /// assert_eq!(v.len(), 1);
+    /// ```
     pub fn len(&self) -> usize {
         self.len
     }
 
     /// Returns true if the set contains no elements.
-    //
-    // # Examples
-    //
-    // ```
-    // use cchashmap::array::ArrayMap;
-    //
-    // let mut v = ArrayMap::new();
-    // assert!(v.is_empty());
-    // v.insert(*b"1", 2);
-    // assert!(!v.is_empty());
-    // ```
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cchashmap::array::ArrayMap;
+    ///
+    /// let mut v = ArrayMap::new();
+    /// assert!(v.is_empty());
+    /// v.insert(*b"1", 2);
+    /// assert!(!v.is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
     /// Clears the set, removing all values.
-    //
-    // # Examples
-    //
-    // ```
-    // use cchashmap::array::ArrayMap;
-    //
-    // let mut v = ArrayMap::new();
-    // v.insert(*b"1", 2);
-    // v.clear();
-    // assert!(v.is_empty());
-    // ```
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cchashmap::array::ArrayMap;
+    /// use cchashmap::util::hash;
+    ///
+    /// let mut v = ArrayMap::new();
+    /// v.insert(*b"1", 2);
+    /// v.clear();
+    /// assert!(v.is_empty());
+    /// ```
     pub fn clear(&mut self) {
         // FIXME: Replace with `std::intrinsics::drop_in_place` once stabilized.
         // For now, just let drain take care of dropping all our items.
@@ -110,21 +110,43 @@ impl<V> ArrayMap<V> {
     /// The key may be any borrowed form of the map's key type, but
     /// `Hash` and `Eq` on the borrowed form *must* match those for
     /// the key type.
-    //
-    // # Examples
-    //
-    // ```
-    // use cchashmap::array::ArrayMap;
-    //
-    // let mut map = ArrayMap::new();
-    // map.insert(*b"1", "a");
-    // assert_eq!(map.get(*b"1"), Some(&"a"));
-    // assert_eq!(map.get(*b"2"), None);
-    // ```
-    pub fn get<K>(&self, hash: u64, key: K) -> Option<&V>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cchashmap::array::ArrayMap;
+    ///
+    /// let mut map = ArrayMap::new();
+    /// map.insert(*b"1", "a");
+    /// assert_eq!(map.get(*b"1"), Some(&"a"));
+    /// assert_eq!(map.get(*b"2"), None);
+    /// ```
+    pub fn get<K>(&self, key: K) -> Option<&V>
         where K: Borrow<[u8]>
     {
-        let hash = hash as u8;
+        self.get_with_hash(util::hash(key.borrow()), key)
+    }
+
+    /// Returns a reference to the value corresponding to the key.
+    ///
+    /// The key may be any borrowed form of the map's key type, but
+    /// `Hash` and `Eq` on the borrowed form *must* match those for
+    /// the key type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cchashmap::array::ArrayMap;
+    ///
+    /// let mut map = ArrayMap::new();
+    /// map.insert(*b"1", "a");
+    /// assert_eq!(map.get(*b"1"), Some(&"a"));
+    /// assert_eq!(map.get(*b"2"), None);
+    /// ```
+    pub fn get_with_hash<K>(&self, hash: u64, key: K) -> Option<&V>
+        where K: Borrow<[u8]>
+    {
+        let hash = hash as KeyLen;
         match self.raw_find(hash, key) {
             Some((_, _, value)) => Some(value),
             None => None,
@@ -136,21 +158,43 @@ impl<V> ArrayMap<V> {
     /// The key may be any borrowed form of the map's key type, but
     /// `Hash` and `Eq` on the borrowed form *must* match those for
     /// the key type.
-    //
-    // # Examples
-    //
-    // ```
-    // use cchashmap::array::ArrayMap;
-    //
-    // let mut map = ArrayMap::new();
-    // map.insert(*b"1", "a");
-    // assert_eq!(map.contains_key(*b"1"), true);
-    // assert_eq!(map.contains_key(*b"2"), false);
-    // ```
-    pub fn contains_key<K>(&self, hash: u64, key: K) -> bool
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cchashmap::array::ArrayMap;
+    ///
+    /// let mut map = ArrayMap::new();
+    /// map.insert(*b"1", "a");
+    /// assert_eq!(map.contains_key(*b"1"), true);
+    /// assert_eq!(map.contains_key(*b"2"), false);
+    /// ```
+    pub fn contains_key<K>(&self, key: K) -> bool
         where K: Borrow<[u8]>
     {
-        self.get(hash, key).is_some()
+        self.contains_key_with_hash(util::hash(key.borrow()), key)
+    }
+
+    /// Returns true if the map contains a value for the specified key.
+    ///
+    /// The key may be any borrowed form of the map's key type, but
+    /// `Hash` and `Eq` on the borrowed form *must* match those for
+    /// the key type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cchashmap::array::ArrayMap;
+    ///
+    /// let mut map = ArrayMap::new();
+    /// map.insert(*b"1", "a");
+    /// assert_eq!(map.contains_key(*b"1"), true);
+    /// assert_eq!(map.contains_key(*b"2"), false);
+    /// ```
+    pub fn contains_key_with_hash<K>(&self, hash: u64, key: K) -> bool
+        where K: Borrow<[u8]>
+    {
+        self.get_with_hash(hash, key).is_some()
     }
 
     /// Returns a mutable reference to the value corresponding to the key.
@@ -171,7 +215,31 @@ impl<V> ArrayMap<V> {
     // }
     // assert_eq!(map.get(*b"1"), Some(&"b"));
     // ```
-    pub fn get_mut<K>(&mut self, hash: u64, key: K) -> Option<&mut V>
+    pub fn get_mut<K>(&mut self, key: K) -> Option<&mut V>
+        where K: Borrow<[u8]>
+    {
+        self.get_mut_with_hash(util::hash(key.borrow()), key)
+    }
+
+    /// Returns a mutable reference to the value corresponding to the key.
+    ///
+    /// The key may be any borrowed form of the map's key type, but
+    /// `Hash` and `Eq` on the borrowed form *must* match those for
+    /// the key type.
+    //
+    // # Examples
+    //
+    // ```
+    // use cchashmap::array::ArrayMap;
+    //
+    // let mut map = ArrayMap::new();
+    // map.insert(*b"1", "a");
+    // if let Some(x) = map.get_mut(*b"1") {
+    //     *x = "b";
+    // }
+    // assert_eq!(map.get(*b"1"), Some(&"b"));
+    // ```
+    pub fn get_mut_with_hash<K>(&mut self, hash: u64, key: K) -> Option<&mut V>
         where K: Borrow<[u8]>
     {
         let hash = hash as u8;
@@ -183,21 +251,43 @@ impl<V> ArrayMap<V> {
 
     /// Inserts a key-value pair into the map. If the key already had a value
     /// present in the map, that value is returned. Otherwise, `None` is returned.
-    //
-    // # Examples
-    //
-    // ```
-    // use cchashmap::array::ArrayMap;
-    //
-    // let mut map = ArrayMap::new();
-    // assert_eq!(map.insert(*b"37", "a"), None);
-    // assert_eq!(map.is_empty(), false);
-    //
-    // map.insert(*b"37", "b");
-    // assert_eq!(map.insert(*b"37", "c"), Some("b"));
-    // assert_eq!(map.get(*b"37"), Some(&"c"));
-    // ```
-    pub fn insert<K>(&mut self, hash: u64, key: K, mut value: V) -> Option<V>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cchashmap::array::ArrayMap;
+    ///
+    /// let mut map = ArrayMap::new();
+    /// assert_eq!(map.insert(*b"37", "a"), None);
+    /// assert_eq!(map.is_empty(), false);
+    ///
+    /// map.insert(*b"37", "b");
+    /// assert_eq!(map.insert(*b"37", "c"), Some("b"));
+    /// assert_eq!(map.get(*b"37"), Some(&"c"));
+    /// ```
+    pub fn insert<K>(&mut self, key: K, value: V) -> Option<V>
+        where K: Borrow<[u8]>
+    {
+        self.insert_with_hash(util::hash(key.borrow()), key, value)
+    }
+
+    /// Inserts a key-value pair into the map. If the key already had a value
+    /// present in the map, that value is returned. Otherwise, `None` is returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cchashmap::array::ArrayMap;
+    ///
+    /// let mut map = ArrayMap::new();
+    /// assert_eq!(map.insert(*b"37", "a"), None);
+    /// assert_eq!(map.is_empty(), false);
+    ///
+    /// map.insert(*b"37", "b");
+    /// assert_eq!(map.insert(*b"37", "c"), Some("b"));
+    /// assert_eq!(map.get(*b"37"), Some(&"c"));
+    /// ```
+    pub fn insert_with_hash<K>(&mut self, hash: u64, key: K, mut value: V) -> Option<V>
         where K: Borrow<[u8]>
     {
         let hash = hash as u8;
@@ -220,18 +310,41 @@ impl<V> ArrayMap<V> {
     /// The key may be any borrowed form of the map's key type, but
     /// `Hash` and `Eq` on the borrowed form *must* match those for
     /// the key type.
-    //
-    // # Examples
-    //
-    // ```
-    // use cchashmap::array::ArrayMap;
-    //
-    // let mut map = ArrayMap::new();
-    // map.insert(*b"1", "a");
-    // assert_eq!(map.remove(*b"1"), Some("a"));
-    // assert_eq!(map.remove(*b"1"), None);
-    // ```
-    pub fn remove<K>(&mut self, hash: u64, key: K) -> Option<V>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cchashmap::array::ArrayMap;
+    ///
+    /// let mut map = ArrayMap::new();
+    /// map.insert(*b"1", "a");
+    /// assert_eq!(map.remove(*b"1"), Some("a"));
+    /// assert_eq!(map.remove(*b"1"), None);
+    /// ```
+    pub fn remove<K>(&mut self, key: K) -> Option<V>
+        where K: Borrow<[u8]>
+    {
+        self.remove_with_hash(util::hash(key.borrow()), key)
+    }
+
+    /// Removes a key from the map, returning the value at the key if the key
+    /// was previously in the map.
+    ///
+    /// The key may be any borrowed form of the map's key type, but
+    /// `Hash` and `Eq` on the borrowed form *must* match those for
+    /// the key type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cchashmap::array::ArrayMap;
+    ///
+    /// let mut map = ArrayMap::new();
+    /// map.insert(*b"1", "a");
+    /// assert_eq!(map.remove(*b"1"), Some("a"));
+    /// assert_eq!(map.remove(*b"1"), None);
+    /// ```
+    pub fn remove_with_hash<K>(&mut self, hash: u64, key: K) -> Option<V>
         where K: Borrow<[u8]>
     {
         let hash = hash as u8;
@@ -353,7 +466,6 @@ impl<V> ArrayMap<V> {
                 Entry::Occupied(OccupiedEntry {
                     array: self,
                     hash: hash,
-                    key: key,
                     value: value,
                     _marker: PhantomData,
                 })
@@ -411,7 +523,7 @@ impl<V> ArrayMap<V> {
     */
 
     #[inline(always)]
-    fn raw_find<K>(&self, hash: u8, key: K) -> Option<(&u8, &[u8], &V)>
+    fn raw_find<K>(&self, _hash: u8, key: K) -> Option<(&u8, &[u8], &V)>
         where K: Borrow<[u8]>
     {
         let key = key.borrow();
@@ -426,7 +538,7 @@ impl<V> ArrayMap<V> {
             let queries = self.queries.get();
             self.queries.set(queries + 1);
 
-            if hash == *h {
+            if true { //hash == *h {
                 let hash_hits = self.hash_hits.get();
                 self.hash_hits.set(hash_hits + 1);
 
@@ -443,7 +555,7 @@ impl<V> ArrayMap<V> {
     }
 
     #[inline(always)]
-    fn raw_find_mut<K>(&mut self, hash: u8, key: K) -> Option<(&u8, &[u8], &mut V)>
+    fn raw_find_mut<K>(&mut self, _hash: u8, key: K) -> Option<(&u8, &[u8], &mut V)>
         where K: Borrow<[u8]>
     {
         let key = key.borrow();
@@ -458,7 +570,7 @@ impl<V> ArrayMap<V> {
             let queries = self.queries.get();
             self.queries.set(queries + 1);
 
-            if hash == *h {
+            if true { //hash == *h {
                 let hash_hits = self.hash_hits.get();
                 self.hash_hits.set(hash_hits + 1);
 
@@ -543,6 +655,16 @@ impl<T: Clone> Clone for ArrayMap<T> {
     }
 }
 
+impl<K, V> FromIterator<(K, V)> for ArrayMap<V>
+    where K: Borrow<[u8]>,
+{
+    fn from_iter<I: IntoIterator<Item=(K, V)>>(iterator: I) -> Self {
+        iterator.into_iter()
+            .map(|(key, value)| (util::hash(key.borrow()), key, value))
+            .collect()
+    }
+}
+
 impl<K, V> FromIterator<(u64, K, V)> for ArrayMap<V>
     where K: Borrow<[u8]>,
 {
@@ -552,7 +674,7 @@ impl<K, V> FromIterator<(u64, K, V)> for ArrayMap<V>
         let mut bucket = ArrayMap::with_capacity(iterator.size_hint().0);
 
         for (hash, key, value) in iterator.into_iter() {
-            bucket.insert(hash, key, value);
+            bucket.insert_with_hash(hash, key, value);
         }
 
         bucket
@@ -810,7 +932,6 @@ pub struct VacantEntry<'a, K, V: 'a> {
 pub struct OccupiedEntry<'a, V: 'a> {
     array: &'a mut ArrayMap<V>,
     hash: &'a u8,
-    key: &'a [u8],
     value: &'a mut V,
     _marker: PhantomData<&'a V>,
 }

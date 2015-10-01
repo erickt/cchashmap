@@ -1,5 +1,4 @@
 use std::borrow::Borrow;
-use std::convert::AsRef;
 use std::fmt;
 use std::iter::FromIterator;
 

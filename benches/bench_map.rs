@@ -69,7 +69,7 @@ fn make_hashmap(fixture: &[String]) -> HashMap<Vec<u8>, ()> {
 }
 
 fn make_cchashmap(fixture: &[String]) -> CCHashMap<()> {
-    let mut map = CCHashMap::with_capacity(4096);
+    let mut map = CCHashMap::with_capacity(1024);
 
     for key in fixture.iter() {
         //let count = map.entry(key.as_bytes()).or_insert(0);
@@ -174,7 +174,7 @@ macro_rules! bench_get {
 bench_get!(bench_btreemap_get, make_btreemap, haystack, {});
 bench_get!(bench_hashmap_get, make_hashmap, haystack, {});
 bench_get!(bench_cchashmap_get, make_cchashmap, haystack, {
-    //assert_eq!(haystack.hits(), (0.0, 0, 0, 0, 0, 0));
+    //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
 });
 
 macro_rules! bench_contains_key {
