@@ -602,7 +602,7 @@ impl<V> ArrayMap<V> {
         let value_size   = mem::size_of::<V>();
 
         let len = buf_size + hash_size + key_len_size + key_len as usize + value_size;
-        self.buf.reserve(len);
+        self.buf.reserve_exact(len);
 
         unsafe {
             // Grab a pointer that's pointing to the end of the space.
