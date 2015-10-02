@@ -68,8 +68,8 @@ fn make_hashmap(fixture: &[String]) -> HashMap<Vec<u8>, ()> {
     map
 }
 
-fn make_cchashmap(fixture: &[String]) -> CCHashMap<()> {
-    let mut map = CCHashMap::with_capacity(1024);
+fn make_cchashmap(fixture: &[String], cap: usize) -> CCHashMap<()> {
+    let mut map = CCHashMap::with_capacity(cap); //1024 * 1);
 
     for key in fixture.iter() {
         //let count = map.entry(key.as_bytes()).or_insert(0);
@@ -93,6 +93,7 @@ fn make_cchashmap(fixture: &[String]) -> CCHashMap<()> {
     map
 }
 
+
 /*
 #[test]
 fn test_hashmap() {
@@ -102,27 +103,58 @@ fn test_hashmap() {
     let buckets = haystack.buckets.iter().map(|b| b.len()).collect::<Vec<_>>();
     println!("{:?}", buckets);
 }
+*/
 
 macro_rules! bench_insert {
-    ($name:ident, $ctor:ident) => {
+    ($name:ident, $ctor:expr, $haystack:ident, $after:expr) => {
         #[bench]
         fn $name(b: &mut test::Bencher) {
             let fixture = make_fixture();
             b.bytes = fixture.iter().fold(0, |sum, word| sum + word.len() as u64);
 
             b.iter(|| {
-                let haystack = $ctor(&fixture);
-                test::black_box(haystack)
+                let $haystack = $ctor(&fixture);
+                $after;
+                test::black_box($haystack)
             })
         }
 
     }
 }
 
-bench_insert!(bench_btreemap_insert, make_btreemap);
-bench_insert!(bench_hashmap_insert, make_hashmap);
-bench_insert!(bench_cchashmap_insert, make_cchashmap);
+bench_insert!(bench_btreemap_insert, make_btreemap, haystack, {});
+bench_insert!(bench_hashmap_insert, make_hashmap, haystack, {});
+//bench_insert!(bench_cchashmap_insert, make_cchashmap);
 
+bench_insert!(bench_cchashmap_insert_00512, (|fixture| make_cchashmap(fixture, 512)), haystack, {
+    //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
+});
+
+bench_insert!(bench_cchashmap_insert_01024, (|fixture| make_cchashmap(fixture, 1024)), haystack, {
+    //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
+});
+
+bench_insert!(bench_cchashmap_insert_02048, (|fixture| make_cchashmap(fixture, 2048)), haystack, {
+    //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
+});
+
+bench_insert!(bench_cchashmap_insert_04096, (|fixture| make_cchashmap(fixture, 4096)), haystack, {
+    //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
+});
+
+bench_insert!(bench_cchashmap_insert_08192, (|fixture| make_cchashmap(fixture, 8192)), haystack, {
+    //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
+});
+
+bench_insert!(bench_cchashmap_insert_16384, (|fixture| make_cchashmap(fixture, 16384)), haystack, {
+    //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
+});
+
+bench_insert!(bench_cchashmap_insert_32768, (|fixture| make_cchashmap(fixture, 32768)), haystack, {
+    //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
+});
+
+/*
 macro_rules! bench_iter {
     ($name:ident, $ctor:expr) => {
         #[bench]
@@ -151,7 +183,7 @@ macro_rules! bench_get {
         #[bench]
         fn $name(b: &mut test::Bencher) {
             let fixture = make_fixture();
-            let fixture_map = make_hashmap(&fixture);
+            //let fixture_map = make_hashmap(&fixture);
             b.bytes = fixture.iter().fold(0, |sum, word| sum + word.len() as u64);
             let $haystack = $ctor(&fixture);
 
@@ -173,7 +205,32 @@ macro_rules! bench_get {
 
 bench_get!(bench_btreemap_get, make_btreemap, haystack, {});
 bench_get!(bench_hashmap_get, make_hashmap, haystack, {});
-bench_get!(bench_cchashmap_get, make_cchashmap, haystack, {
+
+bench_get!(bench_cchashmap_get_00512, (|fixture| make_cchashmap(fixture, 512)), haystack, {
+    //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
+});
+
+bench_get!(bench_cchashmap_get_01024, (|fixture| make_cchashmap(fixture, 1024)), haystack, {
+    //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
+});
+
+bench_get!(bench_cchashmap_get_02048, (|fixture| make_cchashmap(fixture, 2048)), haystack, {
+    //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
+});
+
+bench_get!(bench_cchashmap_get_04096, (|fixture| make_cchashmap(fixture, 4096)), haystack, {
+    //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
+});
+
+bench_get!(bench_cchashmap_get_08192, (|fixture| make_cchashmap(fixture, 8192)), haystack, {
+    //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
+});
+
+bench_get!(bench_cchashmap_get_16384, (|fixture| make_cchashmap(fixture, 16384)), haystack, {
+    //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
+});
+
+bench_get!(bench_cchashmap_get_32768, (|fixture| make_cchashmap(fixture, 32768)), haystack, {
     //assert_eq!(haystack.hits(), (0.0, 0.0, 0, 0, 0, 0, 0));
 });
 
